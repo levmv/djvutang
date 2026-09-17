@@ -1,3 +1,4 @@
+tests/fixtures/** -text
 *.pbm binary
 *.pgm binary
 *.ppm binary
