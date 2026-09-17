@@ -1,0 +1,8 @@
+.{
+    .name = .preview,
+    .version = "0.0.0",
+    .fingerprint = 0xb9852f30ed5c826e,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{ .djvutang = .{ .path = "../.." } },
+    .paths = .{ "build.zig", "build.zig.zon", "main.zig" },
+}

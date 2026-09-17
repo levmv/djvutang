@@ -1,0 +1,6 @@
+__pycache__/
+.zig-cache/
+zig-out/
+zig-pkg/
+node_modules/
+tests/out/

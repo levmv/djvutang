@@ -1,0 +1,13 @@
+(background #123456) (zoom d175) (mode back) (align left bottom)
+(metadata (Title "Synthetic α notes") (Author "A\nB") (Title "Last title") (__proto__ "ordinary key"))
+(xmp "<rdf:RDF xmlns:rdf=\"urn:synthetic\"><title>α</title></rdf:RDF>")
+(phead "left::Header" "right::Page") (pfoot "center::Footer")
+(maparea (url "https://example.invalid/α?q=1&b=2" "_blank") "Quote: \"; slash: \\; octal: \316\261"
+ (rect 5 7 23 11) (border #ABCDEF) (border_avis) (hilite #FF8000) (opacity 75) (future_style 9))
+(maparea "#+1" "Oval" (oval -2 3 15 9) (xor))
+(maparea "#page-a" "Polygon" (poly 10 5 30 8 20 22) (none))
+(maparea "" "Arrow" (line 4 6 40 25) (arrow) (width 3) (lineclr #010203))
+(maparea "" "Note\nTwo lines" (text 30 12 20 10) (pushpin) (backclr #FFFF80) (textclr #123456) (border #000000))
+(maparea "#2" "Shadow" (rect 1 1 4 4) (shadow_eout 7))
+(future_extension (nested "unchanged (α)" 999999999999999999999))
+(maparea "bad" "negative size" (rect 0 0 -2 3)) (zoom d0) (background #oops)

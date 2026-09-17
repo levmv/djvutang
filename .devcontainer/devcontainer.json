@@ -1,0 +1,20 @@
+{
+  "name": "DjVuTang",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "24",
+      "nodeGypDependencies": false,
+      "pnpmVersion": "none"
+    }
+  },
+  "remoteUser": "vscode",
+  "init": true,
+  "appPort": "127.0.0.1:4173:4173",
+  "containerEnv": {
+    "HOST": "0.0.0.0"
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh"
+}

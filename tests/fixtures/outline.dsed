@@ -1,0 +1,6 @@
+(bookmarks
+("Contents α🙂" "" ("Introduction" "#1") ("Chapter" "#page-a" ("Numeric ID" "#2") ("Unicode title" "#Приложение α") ("View" "?page=2&zoom=width")) ("<b>Literal title</b>" "https://example.invalid/α?q=a%20b") ("A B\012Quote \" slash \\" "#sheet b.djvu"))
+("Relative" "#+2")
+("Missing" "#missing")
+("" "")
+)

@@ -1,0 +1,70 @@
+{
+  "entries": [
+    {
+      "title": "Contents α🙂",
+      "href": "",
+      "parent": null,
+      "subtreeEnd": 8
+    },
+    {
+      "title": "Introduction",
+      "href": "#1",
+      "parent": 0,
+      "subtreeEnd": 2
+    },
+    {
+      "title": "Chapter",
+      "href": "#page-a",
+      "parent": 0,
+      "subtreeEnd": 6
+    },
+    {
+      "title": "Numeric ID",
+      "href": "#2",
+      "parent": 2,
+      "subtreeEnd": 4
+    },
+    {
+      "title": "Unicode title",
+      "href": "#Приложение α",
+      "parent": 2,
+      "subtreeEnd": 5
+    },
+    {
+      "title": "View",
+      "href": "?page=2&zoom=width",
+      "parent": 2,
+      "subtreeEnd": 6
+    },
+    {
+      "title": "<b>Literal title</b>",
+      "href": "https://example.invalid/α?q=a%20b",
+      "parent": 0,
+      "subtreeEnd": 7
+    },
+    {
+      "title": "A B\nQuote \" slash \\",
+      "href": "#sheet b.djvu",
+      "parent": 0,
+      "subtreeEnd": 8
+    },
+    {
+      "title": "Relative",
+      "href": "#+2",
+      "parent": null,
+      "subtreeEnd": 9
+    },
+    {
+      "title": "Missing",
+      "href": "#missing",
+      "parent": null,
+      "subtreeEnd": 10
+    },
+    {
+      "title": "",
+      "href": "",
+      "parent": null,
+      "subtreeEnd": 11
+    }
+  ]
+}

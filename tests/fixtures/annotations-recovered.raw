@@ -1,0 +1,5 @@
+ï»¿(metadata (Title "A•B") (Escaped "\342\202X\377") (Good "Ð–ðŸ™‚") (ÿ "unknown key"))
+(maparea "#1" "CÂD" (rect 5 7 23 11))
+(maparea "#ÿ" "damaged href" (rect 1 1 2 2))
+(maparea (url "#2" "_blÿank") "damaged target" (rect 1 1 2 2))
+(future "â‚") (zoom d175)

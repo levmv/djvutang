@@ -1,0 +1,23 @@
+//! DjVu decoder for native and WebAssembly hosts. Input bytes are borrowed and must remain immutable.
+pub const Error = @import("src/types.zig").Error;
+pub const Limits = @import("src/types.zig").Limits;
+pub const Budget = @import("src/budget.zig").Budget;
+pub const Document = @import("src/document.zig").Document;
+pub const DocumentSource = @import("src/document.zig").DocumentSource;
+pub const ByteRange = @import("src/document.zig").ByteRange;
+pub const PageInfo = @import("src/iff.zig").Info;
+pub const RenderJob = @import("src/job.zig").Job;
+pub const RenderOptions = @import("src/geometry.zig").Options;
+pub const RenderRegion = @import("src/geometry.zig").Region;
+pub const RenderSize = @import("src/geometry.zig").Size;
+pub const RenderGeometry = @import("src/geometry.zig").Geometry;
+pub const PageTransform = @import("src/geometry.zig").Transform;
+pub const PageText = @import("src/text.zig").Text;
+pub const PageAnnotations = @import("src/annotations.zig").Annotations;
+pub const DocumentOutline = @import("src/outline.zig").Outline;
+pub const OutlineEntry = @import("src/outline.zig").Entry;
+pub const Link = @import("src/links.zig").Link;
+pub const LinkKind = @import("src/links.zig").Kind;
+pub const TextZone = @import("src/text.zig").Zone;
+pub const ZoneKind = @import("src/text.zig").Kind;
+pub const no_parent = @import("src/text.zig").no_parent;

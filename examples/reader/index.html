@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>DjVuTang reader</title>
+  <link rel="stylesheet" href="/reader.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="book-tools">
+      <button id="open" class="open-button">Open<span class="desktop"> file</span></button>
+      <input id="file" type="file" accept=".djvu,.djv,image/vnd.djvu,image/x-djvu" hidden>
+      <span id="filename" class="filename">DjVu</span>
+    </div>
+    <nav class="page-tools" aria-label="Pages">
+      <button id="previous" class="icon" aria-label="Previous page" title="Previous page (←)" disabled>‹</button>
+      <label class="page-number"><span class="sr-only">Page number</span><input id="page-number" type="number" min="1" value="1" inputmode="numeric" disabled></label>
+      <span id="page-count" class="page-count">/ 0</span>
+      <button id="next" class="icon" aria-label="Next page" title="Next page (→)" disabled>›</button>
+    </nav>
+    <div class="view-tools">
+      <button id="zoom-out" class="icon" aria-label="Zoom out" disabled>−</button>
+      <select id="zoom" aria-label="Zoom" disabled>
+        <option value="fit">Fit page</option>
+        <option value="0.25">25%</option><option value="0.5">50%</option>
+        <option value="1">100%</option><option value="1.5">150%</option>
+        <option value="2">200%</option><option value="4">400%</option>
+        <option id="custom-zoom" value="custom" hidden></option>
+      </select>
+      <button id="zoom-in" class="icon" aria-label="Zoom in" disabled>+</button>
+      <button id="rotate" class="icon rotate" aria-label="Rotate clockwise" title="Rotate clockwise" disabled>↻</button>
+      <button id="text-toggle" aria-controls="text-panel" aria-expanded="false" disabled>Text</button>
+      <button id="close" class="icon" aria-label="Close document" title="Close document" disabled>×</button>
+    </div>
+  </header>
+
+  <main id="workspace">
+    <section id="welcome" class="welcome">
+      <div class="book-mark" aria-hidden="true"><span></span><span></span></div>
+      <p class="eyebrow">DJVU</p>
+      <h1>A place to read</h1>
+      <p>Open a file or drop it here.<br>Your document stays in your browser.</p>
+      <button id="choose" class="primary">Choose file</button>
+      <button id="sample" class="quiet">Open sample · 2 pages</button>
+      <p id="open-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="viewer" class="viewer" aria-label="Document" hidden>
+      <div id="viewport" class="viewport" tabindex="0" aria-label="Document page. Use the left and right arrow keys to change pages.">
+        <div class="stage"><div id="page" class="page"><div id="tiles" class="tiles"></div></div></div>
+      </div>
+      <canvas id="selection-ink" class="selection-ink" aria-hidden="true"></canvas>
+      <div id="problem" class="problem" role="alert" hidden>
+        <h2>Page unavailable</h2><p id="problem-text"></p>
+        <button id="retry">Retry</button>
+      </div>
+      <div id="selection-bar" class="selection-bar" hidden>
+        <span>Text selected</span><button id="copy-selection">Copy</button>
+        <button id="clear-selection" class="icon" aria-label="Clear selection">×</button>
+      </div>
+    </section>
+
+    <aside id="text-panel" class="text-panel" aria-label="Page text" hidden>
+      <header><h2>Page text</h2><button id="text-close" class="icon" aria-label="Close text panel">×</button></header>
+      <p id="text-note">The embedded text may contain recognition errors.</p>
+      <textarea id="page-text" aria-label="Recognized page text" readonly spellcheck="false"></textarea>
+    </aside>
+  </main>
+  <footer class="statusbar"><span id="status" role="status" aria-live="polite">Reading locally</span><span id="text-status"></span></footer>
+  <script type="module" src="/app.mjs"></script>
+</body>
+</html>

@@ -1,0 +1,546 @@
+[
+  {
+    "name": "jb2-padded-legacy",
+    "path": "tests/fixtures/jb2-padded-legacy.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/jb2-padded.pbm"
+  },
+  {
+    "name": "jb2-padded-modern",
+    "path": "tests/fixtures/jb2-padded-modern.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/jb2-padded.pbm"
+  },
+  {
+    "name": "plain",
+    "path": "tests/fixtures/plain.djvu",
+    "pages": 1,
+    "profile": "bilevel"
+  },
+  {
+    "name": "bad-text",
+    "path": "tests/fixtures/bad-text.djvu",
+    "pages": 1,
+    "profile": "bilevel"
+  },
+  {
+    "name": "rotated",
+    "path": "tests/fixtures/rotated.djvu",
+    "pages": 1,
+    "profile": "bilevel"
+  },
+  {
+    "name": "reordered",
+    "path": "tests/fixtures/reordered.djvu",
+    "pages": 2,
+    "profile": "bilevel"
+  },
+  {
+    "name": "shared",
+    "path": "tests/fixtures/shared.djvu",
+    "pages": 2,
+    "profile": "bilevel"
+  },
+  {
+    "name": "reader-sample",
+    "path": "tests/fixtures/reader-sample.djvu",
+    "pages": 2,
+    "profile": "bilevel"
+  },
+  {
+    "name": "gray",
+    "path": "tests/fixtures/gray.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/gray-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "color",
+    "path": "tests/fixtures/color.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/color-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "progressive",
+    "path": "tests/fixtures/progressive.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/progressive-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "chroma-half",
+    "path": "tests/fixtures/chroma-half.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/chroma-half-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "tiny",
+    "path": "tests/fixtures/tiny.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/tiny-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "narrow",
+    "path": "tests/fixtures/narrow.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/narrow-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "palette",
+    "path": "tests/fixtures/palette.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/palette-reference.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "compound",
+    "path": "tests/fixtures/compound.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/compound-reference.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "foreground",
+    "path": "tests/fixtures/foreground.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/foreground-reference.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "gamma",
+    "path": "tests/fixtures/gamma.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/gamma-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "rotated-color",
+    "path": "tests/fixtures/rotated-color.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/rotated-color-expected.ppm",
+    "rotation": 1
+  },
+  {
+    "name": "mmr",
+    "path": "tests/fixtures/mmr.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/mmr.pbm"
+  },
+  {
+    "name": "mmr-inverted",
+    "path": "tests/fixtures/mmr-inverted.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/mmr-inverted.pbm"
+  },
+  {
+    "name": "mmr-striped",
+    "path": "tests/fixtures/mmr-striped.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/mmr-striped.pbm",
+    "oracle_path": "tests/fixtures/mmr.djvu"
+  },
+  {
+    "name": "mmr-striped-inverted",
+    "path": "tests/fixtures/mmr-striped-inverted.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/mmr-striped-inverted.pbm",
+    "oracle_path": "tests/fixtures/mmr.djvu"
+  },
+  {
+    "name": "mmr-tiny",
+    "path": "tests/fixtures/mmr-tiny.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/mmr-tiny.pbm"
+  },
+  {
+    "name": "mmr-long",
+    "path": "tests/fixtures/mmr-long.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/mmr-long.pbm"
+  },
+  {
+    "name": "mmr-uncompressed",
+    "path": "tests/fixtures/mmr-uncompressed.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/mmr-uncompressed.pbm",
+    "oracle_path": "tests/fixtures/mmr-uncompressed-reference.djvu"
+  },
+  {
+    "name": "mmr-foreground",
+    "path": "tests/fixtures/mmr-foreground.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/foreground-reference.ppm",
+    "rotation": 0,
+    "oracle_path": "tests/fixtures/foreground.djvu"
+  },
+  {
+    "name": "jpeg-baseline",
+    "path": "tests/fixtures/jpeg-baseline.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-baseline-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-progressive",
+    "path": "tests/fixtures/jpeg-progressive.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-progressive-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-444",
+    "path": "tests/fixtures/jpeg-444.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-444-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-422",
+    "path": "tests/fixtures/jpeg-422.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-422-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-rgb",
+    "path": "tests/fixtures/jpeg-rgb.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-rgb-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-gray",
+    "path": "tests/fixtures/jpeg-gray.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-gray-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-cmyk",
+    "path": "tests/fixtures/jpeg-cmyk.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-cmyk-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-restart",
+    "path": "tests/fixtures/jpeg-restart.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-restart-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-progressive-restart",
+    "path": "tests/fixtures/jpeg-progressive-restart.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-progressive-restart-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-tiny",
+    "path": "tests/fixtures/jpeg-tiny.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-tiny-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-narrow",
+    "path": "tests/fixtures/jpeg-narrow.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-narrow-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-compound",
+    "path": "tests/fixtures/jpeg-compound.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-compound-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-mmr",
+    "path": "tests/fixtures/jpeg-mmr.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-mmr-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference",
+    "oracle_path": "tests/fixtures/jpeg-compound.djvu"
+  },
+  {
+    "name": "jpeg-background",
+    "path": "tests/fixtures/jpeg-background.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-background-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-foreground",
+    "path": "tests/fixtures/jpeg-foreground.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-foreground-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-gamma-rotated",
+    "path": "tests/fixtures/jpeg-gamma-rotated.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-gamma-rotated-reference.ppm",
+    "rotation": 1,
+    "reference_kind": "stb codec / Python compositor and box reference"
+  },
+  {
+    "name": "jpeg-ycck",
+    "path": "tests/fixtures/jpeg-ycck.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-ycck-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python box reference"
+  },
+  {
+    "name": "jpeg-sequential",
+    "path": "tests/fixtures/jpeg-sequential.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-sequential-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python box reference"
+  },
+  {
+    "name": "shared-layers",
+    "path": "tests/fixtures/shared-layers.djvu",
+    "pages": 2,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-foreground-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference",
+    "oracle_path": "tests/fixtures/shared-layers-reference.djvu"
+  },
+  {
+    "name": "indirect-layers",
+    "path": "tests/fixtures/indirect-layers/index.djvu",
+    "pages": 2,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-foreground-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference",
+    "oracle_path": "tests/fixtures/shared-layers-reference.djvu"
+  },
+  {
+    "name": "indirect-v0",
+    "path": "tests/fixtures/indirect-v0/index.djvu",
+    "pages": 2,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-foreground-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference",
+    "oracle_path": "tests/fixtures/shared-layers-reference.djvu"
+  },
+  {
+    "name": "indirect-zero-sizes",
+    "path": "tests/fixtures/indirect-zero-sizes/index.djvu",
+    "pages": 2,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-foreground-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "stb codec / Python compositor and box reference",
+    "oracle_path": "tests/fixtures/shared-layers-reference.djvu"
+  },
+  {
+    "name": "indirect",
+    "path": "tests/fixtures/indirect/index.djvu",
+    "pages": 2,
+    "profile": "bilevel"
+  },
+  {
+    "name": "blank-page",
+    "path": "tests/fixtures/blank-page.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/blank-page-reference.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "reduced-background",
+    "path": "tests/fixtures/reduced-background.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/reduced-background-reference.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "iw44-empty-parts",
+    "path": "tests/fixtures/iw44-empty-parts.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/iw44-empty-parts-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "iw44-filter-range",
+    "path": "tests/fixtures/iw44-filter-range.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/iw44-filter-range-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "dictionary-aliases",
+    "path": "tests/fixtures/dictionary-aliases.djvu",
+    "pages": 2,
+    "profile": "bilevel"
+  },
+  {
+    "name": "pm44",
+    "path": "tests/fixtures/pm44.iw4",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/color-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "pm44-progressive",
+    "path": "tests/fixtures/pm44-progressive.iw4",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/progressive-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "bm44",
+    "path": "tests/fixtures/bm44.iw4",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/gray-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "bm44-progressive",
+    "path": "tests/fixtures/bm44-progressive.iw4",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/iw44-empty-parts-expected.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "palette-unmapped",
+    "path": "tests/fixtures/palette-unmapped.djvu",
+    "pages": 1,
+    "profile": "color",
+    "source": "tests/fixtures/palette-mask.pbm",
+    "reference_kind": "source PBM over white IW44 background, color box rounding"
+  },
+  {
+    "name": "palette-unmapped-bg",
+    "path": "tests/fixtures/palette-unmapped-bg.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/palette-unmapped-bg-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "black mask over independently decoded IW44 background; DjVuLibre falls back to mask only"
+  },
+  {
+    "name": "palette-empty",
+    "path": "tests/fixtures/palette-empty.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/blank-page-reference.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "mmr-palette",
+    "path": "tests/fixtures/mmr-palette.djvu",
+    "pages": 1,
+    "profile": "bilevel",
+    "source": "tests/fixtures/mmr.pbm"
+  },
+  {
+    "name": "mmr-palette-bg",
+    "path": "tests/fixtures/mmr-palette-bg.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/palette-unmapped-bg-reference.ppm",
+    "rotation": 0,
+    "reference_kind": "black mask over independently decoded IW44 background; DjVuLibre falls back to mask only"
+  },
+  {
+    "name": "jpeg-header-junk",
+    "path": "tests/fixtures/jpeg-header-junk.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-baseline-reference.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "jpeg-zero-padding",
+    "path": "tests/fixtures/jpeg-zero-padding.djvu",
+    "pages": 1,
+    "profile": "color",
+    "reference": "tests/fixtures/jpeg-sequential-reference.ppm",
+    "rotation": 0
+  },
+  {
+    "name": "thum",
+    "path": "tests/fixtures/thumbnails.thum",
+    "pages": 2,
+    "profile": "color",
+    "references": ["tests/fixtures/thumbnail-color-expected.ppm", "tests/fixtures/thumbnail-gray-expected.ppm"],
+    "oracle_path": "tests/fixtures/thumbnails-reference.djvu",
+    "rotation": 0
+  }
+]

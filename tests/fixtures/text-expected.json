@@ -1,0 +1,260 @@
+{
+  "width": 101,
+  "height": 79,
+  "text": "AЖB é🙂 \n漢字 \n\u001f\u001dстрока \n\u001fאבג \n\u001f\u001d\u000bright \nend \n\u000b",
+  "tree": {
+    "kind": "page",
+    "bounds": {
+      "x": 0,
+      "y": 0,
+      "width": 101,
+      "height": 79
+    },
+    "children": [
+      {
+        "kind": "column",
+        "bounds": {
+          "x": 3,
+          "y": 4,
+          "width": 48,
+          "height": 70
+        },
+        "children": [
+          {
+            "kind": "region",
+            "bounds": {
+              "x": 3,
+              "y": 4,
+              "width": 48,
+              "height": 36
+            },
+            "children": [
+              {
+                "kind": "paragraph",
+                "bounds": {
+                  "x": 3,
+                  "y": 4,
+                  "width": 48,
+                  "height": 36
+                },
+                "children": [
+                  {
+                    "kind": "line",
+                    "bounds": {
+                      "x": 5,
+                      "y": 7,
+                      "width": 42,
+                      "height": 13
+                    },
+                    "children": [
+                      {
+                        "kind": "word",
+                        "bounds": {
+                          "x": 5,
+                          "y": 7,
+                          "width": 16,
+                          "height": 12
+                        },
+                        "children": "AЖB"
+                      },
+                      {
+                        "kind": "word",
+                        "bounds": {
+                          "x": 26,
+                          "y": 8,
+                          "width": 20,
+                          "height": 11
+                        },
+                        "children": [
+                          {
+                            "kind": "character",
+                            "bounds": {
+                              "x": 26,
+                              "y": 8,
+                              "width": 5,
+                              "height": 11
+                            },
+                            "children": "e"
+                          },
+                          {
+                            "kind": "character",
+                            "bounds": {
+                              "x": 29,
+                              "y": 5,
+                              "width": 3,
+                              "height": 4
+                            },
+                            "children": "́"
+                          },
+                          {
+                            "kind": "character",
+                            "bounds": {
+                              "x": 35,
+                              "y": 8,
+                              "width": 11,
+                              "height": 11
+                            },
+                            "children": "🙂"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "line",
+                    "bounds": {
+                      "x": 5,
+                      "y": 26,
+                      "width": 38,
+                      "height": 10
+                    },
+                    "children": [
+                      {
+                        "kind": "word",
+                        "bounds": {
+                          "x": 5,
+                          "y": 26,
+                          "width": 38,
+                          "height": 10
+                        },
+                        "children": "漢字"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "region",
+            "bounds": {
+              "x": 4,
+              "y": 47,
+              "width": 46,
+              "height": 25
+            },
+            "children": [
+              {
+                "kind": "paragraph",
+                "bounds": {
+                  "x": 4,
+                  "y": 47,
+                  "width": 46,
+                  "height": 12
+                },
+                "children": [
+                  {
+                    "kind": "line",
+                    "bounds": {
+                      "x": 6,
+                      "y": 48,
+                      "width": 39,
+                      "height": 10
+                    },
+                    "children": [
+                      {
+                        "kind": "word",
+                        "bounds": {
+                          "x": 6,
+                          "y": 48,
+                          "width": 39,
+                          "height": 10
+                        },
+                        "children": "строка"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "paragraph",
+                "bounds": {
+                  "x": 4,
+                  "y": 62,
+                  "width": 46,
+                  "height": 10
+                },
+                "children": [
+                  {
+                    "kind": "line",
+                    "bounds": {
+                      "x": 6,
+                      "y": 62,
+                      "width": 39,
+                      "height": 10
+                    },
+                    "children": [
+                      {
+                        "kind": "word",
+                        "bounds": {
+                          "x": 6,
+                          "y": 62,
+                          "width": 39,
+                          "height": 10
+                        },
+                        "children": "אבג"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "column",
+        "bounds": {
+          "x": 56,
+          "y": 3,
+          "width": 42,
+          "height": 70
+        },
+        "children": [
+          {
+            "kind": "line",
+            "bounds": {
+              "x": 57,
+              "y": 5,
+              "width": 38,
+              "height": 12
+            },
+            "children": [
+              {
+                "kind": "word",
+                "bounds": {
+                  "x": 57,
+                  "y": 5,
+                  "width": 38,
+                  "height": 12
+                },
+                "children": "right"
+              }
+            ]
+          },
+          {
+            "kind": "line",
+            "bounds": {
+              "x": 57,
+              "y": 29,
+              "width": 38,
+              "height": 12
+            },
+            "children": [
+              {
+                "kind": "word",
+                "bounds": {
+                  "x": 57,
+                  "y": 29,
+                  "width": 38,
+                  "height": 12
+                },
+                "children": "end"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

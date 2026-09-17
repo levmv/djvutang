@@ -1,0 +1,89 @@
+[
+  {
+    "name": "iw44-reduced-full",
+    "levels": [
+      {
+        "reduction": 1,
+        "width": 128,
+        "height": 96,
+        "rgb_sha256": "f0f8ad1c6fad34c721e7ca1c09eb824ff9300198aa6f21054c50b503a491bc87"
+      },
+      {
+        "reduction": 2,
+        "width": 64,
+        "height": 48,
+        "rgb_sha256": "4e1e64b3d7ae6b364d57efab7684469b4099263ee6e6eba4147621e160c66975"
+      },
+      {
+        "reduction": 4,
+        "width": 32,
+        "height": 24,
+        "rgb_sha256": "225fe3a7030ae1faef972b7851fe902007e10542d4e4df82ed59ca6dda54dbde"
+      },
+      {
+        "reduction": 8,
+        "width": 16,
+        "height": 12,
+        "rgb_sha256": "2861b59be6671fd57ebb453845d628a506bdfb7f2ba4defda37ab10cbe58e74e"
+      }
+    ]
+  },
+  {
+    "name": "iw44-reduced-half",
+    "levels": [
+      {
+        "reduction": 1,
+        "width": 128,
+        "height": 96,
+        "rgb_sha256": "50cc0b01fa3b064ea6f01937e0ce8d3fc9327c318d4bab54cfebec32e63b0246"
+      },
+      {
+        "reduction": 2,
+        "width": 64,
+        "height": 48,
+        "rgb_sha256": "4064a69e83bce6380edc3a1fbb58c69d891fec2c08b4b805712152618730975f"
+      },
+      {
+        "reduction": 4,
+        "width": 32,
+        "height": 24,
+        "rgb_sha256": "35eea2d0ce82aa62a474a2b24f831bbd9aecc3c353b2765183dde0ea1b291aa3"
+      },
+      {
+        "reduction": 8,
+        "width": 16,
+        "height": 12,
+        "rgb_sha256": "9f97fbed12143ff28b54675569ed6dcab22a56bac4d29f51fa98d1bbb2f35282"
+      }
+    ]
+  },
+  {
+    "name": "iw44-reduced-gray",
+    "levels": [
+      {
+        "reduction": 1,
+        "width": 128,
+        "height": 96,
+        "rgb_sha256": "9497f958be90987047af87896321838b11f8f83cba6e1f8f25b66ef0df663264"
+      },
+      {
+        "reduction": 2,
+        "width": 64,
+        "height": 48,
+        "rgb_sha256": "caf977a68e431b49dd3d6ac2a93c2011e4651c9d7c0c48eb8456c150bd975776"
+      },
+      {
+        "reduction": 4,
+        "width": 32,
+        "height": 24,
+        "rgb_sha256": "3797610c90f9d29271f2726ad5419df42947049180aed17d01d8af0f0d1b7693"
+      },
+      {
+        "reduction": 8,
+        "width": 16,
+        "height": 12,
+        "rgb_sha256": "a5301576a08567092887163420639dc49e740892c1e5f3f3fde77e7ba4e461df"
+      }
+    ]
+  }
+]
