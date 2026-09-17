@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'snapshot' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  wasm:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - variant: wasm
+            simd: false
+          - variant: wasm-simd
+            simd: true
+    env:
+      VARIANT: ${{ matrix.variant }}
+      WASM_SIMD: ${{ matrix.simd }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.16.0
+          cache-key: ${{ matrix.variant }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - run: make wasm-test
+      - name: Test consumers
+        if: ${{ !matrix.simd }}
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium webkit
+          make consumer-test
+      - name: Package
+        run: |
+          make dist
+          package="djvutang-$RELEASE_TAG-$VARIANT"
+          mv zig-out/dist "zig-out/$package"
+          mkdir -p zig-out/release
+          tar -czf "zig-out/release/$package.tar.gz" -C zig-out "$package"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-${{ matrix.variant }}
+          path: zig-out/release/*
+          if-no-files-found: error
+
+  native:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            target: x86_64-linux-gnu.2.28
+          - os: macos-14
+            platform: macos-aarch64
+            target: aarch64-macos.13.0
+          - os: windows-2022
+            platform: windows-x86_64
+            target: x86_64-windows-gnu
+    runs-on: ${{ matrix.os }}
+    env:
+      PLATFORM: ${{ matrix.platform }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.16.0
+      - name: Build and test
+        run: zig build c c-test test -Dtarget="$TARGET" -Dcpu=baseline -Doptimize=ReleaseSafe --prefix zig-out/native
+      - name: Package
+        run: |
+          package="djvutang-$RELEASE_TAG-$PLATFORM"
+          mkdir -p "zig-out/packages/$package" zig-out/release
+          cp -R zig-out/native/include zig-out/native/lib "zig-out/packages/$package/"
+          cp LICENSE THIRD_PARTY_NOTICES.txt "zig-out/packages/$package/"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            mkdir "zig-out/packages/$package/bin"
+            cp zig-out/native/bin/djvutang.dll "zig-out/packages/$package/bin/"
+          else
+            tar -czf "zig-out/release/$package.tar.gz" -C zig-out/packages "$package"
+          fi
+      - name: Archive Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path zig-out/packages/* -DestinationPath "zig-out/release/djvutang-$env:RELEASE_TAG-$env:PLATFORM.zip"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-${{ matrix.platform }}
+          path: zig-out/release/*
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push'
+    needs: [wasm, native]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - name: Publish release
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+          flags=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" ./* --verify-tag --generate-notes --title "$RELEASE_TAG" "${flags[@]}"

@@ -48,9 +48,9 @@ try {
   // alone would hide a missing source file in the published package.
   const archive = join(temp, 'source.tar.gz');
   run('tar', ['-czf', archive, '-C', root,
-    'build.zig', 'build.zig.zon', 'root.zig', 'src', 'vendor', 'wasm',
+    'build.zig', 'build.zig.zon', 'root.zig', 'src', 'include', 'vendor', 'wasm',
     'tools/cli.zig', 'tools/bench.zig',
-    'tests.zig', 'tests/native', 'tests/fixtures', 'tests/support', 'tests/wasm', 'tests/fuzz',
+    'tests.zig', 'tests/native', 'tests/fixtures', 'tests/support', 'tests/wasm', 'tests/fuzz', 'tests/consumers/c.c',
     'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.txt']);
   const manifest = await readFile(join(temp, 'native/build.zig.zon'), 'utf8');
   const cache = join(temp, 'cache');
@@ -60,6 +60,19 @@ try {
   await writeFile(join(temp, 'native/build.zig.zon'), manifest.replace('.path = "../.."', '.path = "../package"'));
   run(zig, ['build', '-Doptimize=ReleaseSafe'], join(temp, 'native'));
   const native = join(temp, 'native/zig-out/bin/preview');
+  const cPrefix = join(temp, 'c-library');
+  run(zig, ['build', 'c', '--prefix', cPrefix], join(temp, 'package'));
+  const libraryDir = join(cPrefix, 'lib');
+  for (const extension of ['a', process.platform === 'darwin' ? 'dylib' : 'so']) {
+    const executable = join(temp, `c-test-${extension}`);
+    run(zig, ['cc', '-std=c99', '-Wall', '-Wextra', '-Werror', '-I', join(cPrefix, 'include'),
+      join(temp, 'package/tests/consumers/c.c'), join(libraryDir, `libdjvutang.${extension}`), '-lm', `-Wl,-rpath,${libraryDir}`, '-o', executable]);
+    run(executable, [join(temp, 'package/tests/fixtures')]);
+  }
+  await writeFile(join(temp, 'header.cpp'), '#include <djvutang.h>\nint main() { return djvutang_close(nullptr); }\n');
+  run(zig, ['c++', '-std=c++11', '-I', join(cPrefix, 'include'), '-c', 'header.cpp', '-o', 'header.o']);
+  run(zig, ['cc', 'header.o', join(libraryDir, 'libdjvutang.a'), '-lm', '-o', join(temp, 'header')]);
+  run(join(temp, 'header'), []);
   const cases = [
     { name: 'color', reference: 'color-expected', pages: 1, text: null },
     { name: 'jpeg-progressive', reference: 'jpeg-progressive-reference', pages: 1, text: null },
@@ -151,7 +164,7 @@ try {
     } finally { await browser.close(); }
   }
   await writeFile(join(out, 'results.json'), JSON.stringify(results, null, 2) + '\n');
-  console.log('External consumers: native Zig package, TypeScript, plain ESM, esbuild ESM/IIFE, Chromium and WebKit.');
+  console.log('External consumers: Zig package, static/shared C, C++ header, TypeScript, esbuild ESM/IIFE, Chromium and WebKit.');
 } finally {
   if (server) await new Promise(resolve => server.close(resolve));
   await rm(temp, { recursive: true, force: true });

@@ -1,7 +1,7 @@
 # DjVuTang
 
 DjVuTang is a small DjVu decoding library in Zig for rendering pages and covers
-and extracting text. It provides a native API, an import-free WebAssembly module
+and extracting text. It provides Zig and C APIs, an import-free WebAssembly module
 and a browser Worker adapter.
 
 Supports DjVu except for legacy DIR0/NDIR containers, WMRM and
@@ -13,6 +13,7 @@ Requires **Zig 0.16.0**.
 
 ```sh
 make             # CLI and WASM in zig-out/bin
+make c           # C libraries in zig-out/lib and header in zig-out/include
 make dist        # WASM, browser modules and types in zig-out/dist
 ```
 
@@ -28,7 +29,7 @@ CLI page numbers start at 1; library and WASM page indexes start at 0.
 
 ## Use the library
 
-Copy `zig-out/dist` into your web application. Given a document as an `ArrayBuffer`:
+Given a document as an `ArrayBuffer`:
 
 ```js
 import { DjvuDecoder } from './djvu/decoder.mjs';
@@ -45,6 +46,7 @@ try {
 
 - [Browser API](web/README.md) and [TypeScript example](examples/browser/preview.ts).
 - [Native Zig example](examples/zig); public API in [root.zig](root.zig).
+- [C API](include/djvutang.h).
 - Other WASM hosts: instantiate `djvutang.wasm` without imports;
   exports are in [wasm/main.zig](wasm/main.zig).
 - [Demo reader](examples/reader/README.md): run `make reader`.

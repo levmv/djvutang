@@ -6,10 +6,13 @@ FUZZ_RUNS ?= 100K
 WASM_SIMD ?= false
 ZIG_SOURCES = build.zig build.zig.zon root.zig tests.zig tests/native tests/wasm tests/support tests/fuzz/native.zig src tools/*.zig wasm examples/zig
 
-.PHONY: all wasm dist test native-test wasm-test fuzz fuzz-jpeg oracle-test browser-test consumer-test reader reader-test
+.PHONY: all c wasm dist test native-test wasm-test fuzz fuzz-jpeg oracle-test browser-test consumer-test reader reader-test
 all:
 	$(ZIG) build
 	$(ZIG) build wasm -Dwasm-simd=$(WASM_SIMD)
+
+c:
+	$(ZIG) build c
 
 wasm:
 	$(ZIG) build wasm -Dwasm-simd=$(WASM_SIMD)
@@ -24,7 +27,7 @@ test: native-test
 
 native-test:
 	$(ZIG) fmt --check --ast-check $(ZIG_SOURCES)
-	$(ZIG) build test
+	$(ZIG) build test c-test
 
 wasm-test: wasm
 	$(ZIG) build iw44-probe-wasm preview-probe-wasm heap-test-wasm -Dwasm-simd=$(WASM_SIMD)

@@ -8,13 +8,13 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    addJpeg(b, core);
+    addJpeg(b, core, false);
     const test_module = b.createModule(.{
         .root_source_file = b.path("tests.zig"),
         .target = target,
         .optimize = optimize,
     });
-    addJpeg(b, test_module);
+    addJpeg(b, test_module, false);
     const tests = b.addTest(.{ .root_module = test_module, .use_llvm = true });
     b.step("test", "Run native decoder tests").dependOn(&b.addRunArtifact(tests).step);
 
@@ -29,6 +29,54 @@ pub fn build(b: *std.Build) void {
         }),
     });
     b.installArtifact(cli);
+
+    const c_core = b.createModule(.{
+        .root_source_file = b.path("root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    addJpeg(b, c_core, true);
+    const c_module = b.createModule(.{
+        .root_source_file = b.path("src/c_api.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .pic = true,
+        .imports = &.{.{ .name = "djvutang", .module = c_core }},
+    });
+    const c_static = b.addLibrary(.{
+        .name = if (target.result.os.tag == .windows) "djvutang-static" else "djvutang",
+        .linkage = .static,
+        .root_module = c_module,
+        .use_llvm = true,
+    });
+    // Include Zig's helper routines so a C linker can consume the archive alone.
+    c_static.bundle_compiler_rt = true;
+    c_static.bundle_ubsan_rt = true;
+    c_static.installHeader(b.path("include/djvutang.h"), "djvutang.h");
+    const c_shared = b.addLibrary(.{
+        .name = "djvutang",
+        .linkage = .dynamic,
+        .root_module = c_module,
+        .use_llvm = true,
+    });
+    const c_step = b.step("c", "Build static/shared C libraries and install the header");
+    c_step.dependOn(&b.addInstallArtifact(c_static, .{}).step);
+    c_step.dependOn(&b.addInstallArtifact(c_shared, .{}).step);
+    const c_test_step = b.step("c-test", "Test the C API with static and shared linkage");
+    for ([_]*std.Build.Step.Compile{ c_static, c_shared }, [_][]const u8{ "static", "shared" }) |library, kind| {
+        const consumer = b.addExecutable(.{
+            .name = b.fmt("test-c-{s}", .{kind}),
+            .root_module = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true }),
+            .use_llvm = true,
+        });
+        consumer.root_module.addCSourceFile(.{ .file = b.path("tests/consumers/c.c"), .flags = &.{ "-std=c99", "-Wall", "-Wextra", "-Werror" } });
+        consumer.root_module.linkLibrary(library);
+        consumer.root_module.addIncludePath(b.path("include"));
+        const run = b.addRunArtifact(consumer);
+        run.addDirectoryArg(b.path("tests/fixtures"));
+        c_test_step.dependOn(&run.step);
+    }
 
     const bench = b.addExecutable(.{
         .name = "djvutang-bench",
@@ -56,7 +104,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .strip = true,
     });
-    addJpeg(b, wasm_core);
+    addJpeg(b, wasm_core, false);
     const wasm = b.addExecutable(.{
         .name = "djvutang",
         .use_llvm = true,
@@ -143,17 +191,18 @@ fn iw44Probe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     });
 }
 
-fn addJpeg(b: *std.Build, module: *std.Build.Module) void {
+fn addJpeg(b: *std.Build, module: *std.Build.Module, hide_symbols: bool) void {
     module.addIncludePath(b.path("vendor/stb"));
     module.addIncludePath(b.path("src/c-compat"));
     // Zig 0.16's fuzz runtime uses a different PC table from Clang and lacks
     // its trace-cmp callbacks. JPEG still runs, but only Zig supplies coverage.
+    const flags = [_][]const u8{
+        "-std=c11",
+        "-fwrapv",
+        "-fno-sanitize-coverage=trace-cmp,inline-8bit-counters,pc-table,indirect-calls",
+    };
     module.addCSourceFile(.{
         .file = b.path("src/jpeg_stb.c"),
-        .flags = &.{
-            "-std=c11",
-            "-fwrapv",
-            "-fno-sanitize-coverage=trace-cmp,inline-8bit-counters,pc-table,indirect-calls",
-        },
+        .flags = if (hide_symbols) &(flags ++ .{"-fvisibility=hidden"}) else &flags,
     });
 }

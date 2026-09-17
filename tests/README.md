@@ -9,10 +9,10 @@ make test WASM_SIMD=true
 
 | Suite | Command |
 | --- | --- |
-| Native decoder | `make native-test` (Zig only) |
+| Native decoder and C API | `make native-test` (Zig only) |
 | WASM ABI | `make wasm-test` (Zig and Node) |
 | Browser Worker and adapter | `make browser-test` |
-| Standalone Zig and browser consumers | `make consumer-test` |
+| Standalone Zig, C and browser consumers | `make consumer-test` |
 | Demo reader | `make reader-test` |
 | External decoder comparisons | `make oracle-test` |
 | Native/WASM fuzzing | `make fuzz FUZZ_RUNS=100K` |
@@ -24,6 +24,7 @@ External comparisons and fixture generators use the tools in the
 browser, consumer and oracle tests.
 
 Native tests cover format details, allocation failures and decoder internals.
+C API checks exercise both static and shared libraries through the public header.
 WASM tests cover the ABI and compare rendering with saved references. Browser
 and consumer tests exercise loading, ownership, cancellation and integration.
 The reader tests live with the demo in `examples/reader/tests`.
