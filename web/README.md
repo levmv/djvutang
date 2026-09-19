@@ -35,6 +35,7 @@ share that job: a new request cancels the previous unfinished one with `Cancelle
 Render tiles sequentially. Text and other metadata reads can run during rendering.
 
 - `cancelRender()` stops the render/thumbnail; metadata reads continue.
+- `cancelMetadata()` stops the document metadata scan; rendering continues.
 - `dropCache()` cancels pending operations and releases cached components and layers.
 - `close()` cancels pending operations and releases the document, keeping the Worker for another `open`.
 - `destroy()` synchronously cancels pending operations and terminates the Worker;
@@ -97,10 +98,44 @@ components.
 Component headers are checked when loaded; zero directory sizes require header
 reads during opening. Gaps are scanned for metadata, including late NAVM.
 Pages load on demand; evicted components are read again when needed.
-Single-page DjVu, IW44 and THUM inputs are read whole. An indirect index
-can use a range source too; its external files still use `loadComponent`.
+Single-page DjVu opening reads chunk headers and NAVM; image payloads load on
+demand. Standalone IW44 and THUM inputs are read whole. An indirect index
+can use a range source too; its external files use `loadComponent`, returning
+an ArrayBuffer or a `{ size, read }` source. Source objects are reused until close;
+the host owns their IO and lifetime. Rendering reads complete components.
 The source may be up to `0xffffffff` bytes; the memory budget counts retained
 bytes, not the file's size.
+
+## Document metadata
+
+`await decoder.metadata()` explicitly checks shared and page-local annotations
+throughout the document, including late pages and unreferenced shared components.
+It reads headers, INCL and ANTa/ANTz; image, OCR and dictionary payloads are skipped.
+Use a range source to avoid loading the whole file. A successful result with empty
+`metadata` and `xmp` arrays confirms absence; errors and cancellation reject.
+Only one scan may run at a time. Rendering and per-page `annotations()` stay independent.
+
+The result contains `metadata: [{ key, value, page }]` and `xmp: [{ value, page }]`.
+It preserves key case, unknown keys, duplicates and all XMP packets. `page` is
+zero-based, or null for shared annotations. Shared records are emitted once,
+unless page context changes their interpretation. Field selection and interpretation
+belong to the host; `Creator`, for example, is not automatically an author.
+
+The scan uses the document's memory budget. The 4 MiB annotation byte limit applies
+to the total decompressed input across its components. Cancellation is checked
+between reads and structural steps; individual annotation streams are synchronous.
+The document can then render a cover with `render(0, { size: ... })` if needed.
+For batch imports, reuse a decoder across files; see
+`examples/browser/inspect.ts` in the source tree.
+
+Direct WASM hosts call `metadata_start()`, then `metadata_step(work)` until it
+returns 0 (complete), 1 (more work/input), or an error code. On 1, `metadata_range()`
+returns zero or a pointer to three u32 words: component, offset, length. Component
+`0xffffffff` means the original source; other indexes identify external files.
+Fill `metadata_alloc()` with exactly that range, then call `metadata_commit(fileSize)`
+with the full source file size. On completion, copy `metadata_ptr()/metadata_len()`
+UTF-8 JSON. Always call `metadata_release()`, including after error or cancellation.
+`metadata_cancel()` interrupts between steps. Reacquire WASM views after allocation.
 
 ## Errors and measurements
 

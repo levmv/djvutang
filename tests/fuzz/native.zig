@@ -3,6 +3,7 @@
 const std = @import("std");
 const iff = @import("../../src/iff.zig");
 const Document = @import("../../src/document.zig").Document;
+const MetadataScan = @import("../../src/metadata.zig").Scan;
 const Job = @import("../../src/job.zig").Job;
 const Budget = @import("../../src/budget.zig").Budget;
 const Limits = @import("../../src/types.zig").Limits;
@@ -48,6 +49,7 @@ const samples = blk: {
         "text-recovered-z.djvu",             "annotations-a.djvu",     "annotations-z.djvu",
         "annotations-shared.djvu",           "outline.djvu",           "thumbnails.djvu",
         "thumbnail-inline-progressive.djvu", "thumbnails.thum",        "pm44-progressive.iw4",
+        "metadata-book.djvu",                "metadata-context.djvu",  "metadata-none.djvu",
     }) |name| result = result ++ .{@as([]const u8, @embedFile("../fixtures/" ++ name))};
     break :blk result;
 };
@@ -112,6 +114,13 @@ fn metadata(doc: *Document, page: usize) void {
         if (std.json.Stringify.valueAlloc(doc.allocator, outline, .{})) |bytes| doc.allocator.free(bytes) else |_| {}
     }
     _ = doc.resolveLink("#+1", page) catch {};
+    var scan = MetadataScan.init(doc) catch return;
+    defer scan.deinit();
+    if ((scan.step(4096) catch return) == .done) {
+        var value = scan.takeResult() catch return;
+        defer value.deinit();
+        if (std.json.Stringify.valueAlloc(doc.allocator, &value, .{})) |bytes| doc.allocator.free(bytes) else |_| {}
+    }
 }
 
 fn drive(job: *Job, s: *Smith) !void {

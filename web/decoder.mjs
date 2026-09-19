@@ -17,6 +17,8 @@ export class DjvuDecoder {
   #componentRequests = new Map();
   #loadComponent;
   #readRange;
+  #sourceSize;
+  #componentSources = new Map();
 
   /** Accepts a URL, WASM bytes, or a compiled module shared by several decoders.
    * workerUrl lets an application place its Worker independently of this module.
@@ -50,7 +52,7 @@ export class DjvuDecoder {
       throw new DjvuError('WorkerFailed', 'Could not start the decoder Worker', { cause });
     }
     this.#worker.onmessage = ({ data }) => {
-      if (data.type === 'component-request' || data.type === 'range-request') {
+      if (['component-request', 'range-request', 'metadata-request'].includes(data.type)) {
         void this.#loadRequestedComponent(data);
         return;
       }
@@ -84,7 +86,7 @@ export class DjvuDecoder {
 
   /** Accepts an ArrayBuffer (transferred) or { size, read(offset, length, { signal }) }.
    * Range readers return exactly the requested bytes as an ArrayBuffer (transferred).
-   * Bundled files load pages on demand; standalone files are read whole.
+   * DjVu pages load on demand; standalone IW44/THUM files are read whole.
    * Indirect files use loadComponent(component, { signal }). The host resolves names.
    */
   open(bytes, { memoryLimit = 64 * 1024 * 1024, cacheLimit = Math.floor(memoryLimit / 4), loadComponent } = {}) {
@@ -105,6 +107,8 @@ export class DjvuDecoder {
     this.#abortComponents();
     this.#loadComponent = loadComponent;
     this.#readRange = ranged ? bytes.read.bind(bytes) : undefined;
+    this.#sourceSize = ranged ? bytes.size : bytes.byteLength;
+    this.#componentSources.clear();
     return this.#request('open', {
       ...(ranged ? { size: bytes.size } : { bytes }),
       memoryLimit, cacheLimit, source: ++this.#source,
@@ -115,23 +119,41 @@ export class DjvuDecoder {
     if (!this.#worker || message.source !== this.#source) return;
     const controller = new AbortController();
     this.#componentRequests.set(message.request, controller);
-    let bytes, error;
+    let bytes, error, size, whole = false, readingRange = false;
+    const metadata = message.type === 'metadata-request';
     const range = message.range ?? message.component?.range;
     try {
-      if (range) {
+      if (range && !(metadata && message.component)) {
         if (!this.#readRange) throw new DjvuError('MissingComponent');
+        readingRange = true;
         bytes = await this.#readRange(range.offset, range.length, { signal: controller.signal });
+        size = this.#sourceSize;
       } else {
         if (!this.#loadComponent) throw new DjvuError('MissingComponent');
-        bytes = await this.#loadComponent(message.component, { signal: controller.signal });
+        const index = message.component.index;
+        let input = this.#componentSources.get(index);
+        input ??= await this.#loadComponent(message.component, { signal: controller.signal });
+        if (input instanceof ArrayBuffer) {
+          bytes = input;
+          whole = metadata;
+        } else {
+          if (!input || typeof input.read !== 'function' || !Number.isInteger(input.size)
+            || input.size < 1 || input.size > 0xffffffff) throw new DjvuError('InvalidArgument');
+          if (message.source !== this.#source || controller.signal.aborted) return;
+          this.#componentSources.set(index, input);
+          size = input.size;
+          readingRange = true;
+          bytes = await input.read(metadata ? range.offset : 0, metadata ? range.length : size, { signal: controller.signal });
+          if (!(bytes instanceof ArrayBuffer) || (!metadata && bytes.byteLength !== size)) throw new DjvuError('InvalidArgument');
+        }
       }
       if (!(bytes instanceof ArrayBuffer)) throw new DjvuError('InvalidArgument');
-      if (range && bytes.byteLength !== range.length) throw new DjvuError('InvalidArgument');
+      if (range && !whole && bytes.byteLength !== range.length) throw new DjvuError('InvalidArgument');
     } catch (cause) {
       if (['MissingComponent', 'InvalidArgument'].includes(cause?.code)) {
         error = cause.code;
       } else {
-        error = range ? 'SourceReadFailed' : 'ComponentLoadFailed';
+        error = readingRange ? 'SourceReadFailed' : 'ComponentLoadFailed';
       }
     }
     if (controller.signal.aborted || !this.#worker || message.source !== this.#source) return;
@@ -139,7 +161,7 @@ export class DjvuDecoder {
     try {
       this.#worker.postMessage({
         type: 'component-response', request: message.request, source: message.source,
-        bytes: error ? undefined : bytes, error,
+        bytes: error ? undefined : bytes, error, size, whole,
       }, error ? [] : [bytes]);
     } catch {
       this.#worker.postMessage({
@@ -169,6 +191,13 @@ export class DjvuDecoder {
    * geometry().matrix maps them into the rendered region. Links are data only.
    */
   annotations(page) { return this.#request('annotations', { page }); }
+
+  /** Complete document metadata scan. Returns fields and XMP with page scope;
+   * empty arrays confirm absence. Does not decode page images. */
+  metadata() { return this.#request('metadata'); }
+
+  /** Cancels the current metadata scan between bounded steps and reads. */
+  cancelMetadata() { return this.#request('cancel-metadata'); }
 
   /** Owned NAVM snapshot, or null. Flat preorder entries carry parent/subtreeEnd.
    * Reads the index only; does not load pages or cancel a render.
@@ -204,6 +233,7 @@ export class DjvuDecoder {
     this.#abortComponents();
     this.#loadComponent = undefined;
     this.#readRange = undefined;
+    this.#componentSources.clear();
     this.#source++;
     return this.#request('close');
   }
@@ -215,6 +245,7 @@ export class DjvuDecoder {
     this.#abortComponents();
     this.#loadComponent = undefined;
     this.#readRange = undefined;
+    this.#componentSources.clear();
     this.#worker?.terminate();
     this.#worker = null;
     for (const request of this.#pending.values()) request.reject(error);

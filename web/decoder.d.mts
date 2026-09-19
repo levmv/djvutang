@@ -70,7 +70,7 @@ export interface PageInfo {
   width?: number; height?: number; rotation?: QuarterTurns; error?: DjvuErrorCode;
 }
 export interface DocumentInfo { pages: PageInfo[]; indirect: boolean }
-export type LoadComponent = (component: Component, options: { signal: AbortSignal }) => ArrayBuffer | Promise<ArrayBuffer>;
+export type LoadComponent = (component: Component, options: { signal: AbortSignal }) => ArrayBuffer | RandomAccessSource | Promise<ArrayBuffer | RandomAccessSource>;
 export interface OpenOptions {
   memoryLimit?: number;
   /** Idle cache target in bytes (default: memoryLimit / 4). Active work may exceed it. */
@@ -124,6 +124,12 @@ export interface Annotations {
   xmp: string | null; header: PrintStrings; footer: PrintStrings;
 }
 
+/** Owned fields and XMP packets. page is zero-based, or null for shared annotations. */
+export interface DocumentMetadata {
+  metadata: { key: string; value: string; page: number | null }[];
+  xmp: { value: string; page: number | null }[];
+}
+
 /** One Worker, one document and one render at a time. Page indexes are zero-based. */
 export class DjvuDecoder {
   private constructor();
@@ -148,6 +154,12 @@ export class DjvuDecoder {
   storedThumbnail(page: number): Promise<Raster | null>;
   text(page: number): Promise<PageText | null>;
   annotations(page: number): Promise<Annotations | null>;
+  /** Complete scan without image decoding. Empty arrays confirm absence; failures reject.
+   * Preserves key case, unknown keys, duplicate entries, XMP packets and page scope.
+   */
+  metadata(): Promise<DocumentMetadata>;
+  /** Stops the document metadata scan between bounded steps and source reads. */
+  cancelMetadata(): Promise<void>;
   outline(): Promise<Outline | null>;
   resolveLink(href: string, fromPage?: number | null): Promise<Link>;
   /** Cancels render/thumbnail with Cancelled; metadata reads continue. */

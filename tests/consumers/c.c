@@ -201,6 +201,42 @@ static void metadata(void) {
     djvutang_render_destroy(job);
     STATUS(djvutang_close(doc), DJVUTANG_OK);
     free(input.data);
+
+    input = load("metadata-indirect/index.djvu");
+    doc = open_document(input);
+    djvutang_metadata_scan *scan = NULL, *second = NULL;
+    STATUS(djvutang_metadata_start(doc, &scan), DJVUTANG_OK);
+    STATUS(djvutang_metadata_start(doc, &second), DJVUTANG_BUSY);
+    CHECK(second == NULL);
+    STATUS(djvutang_close(doc), DJVUTANG_BUSY);
+    djvutang_metadata_cancel(scan);
+    STATUS(djvutang_metadata_step(scan, 1), DJVUTANG_CANCELLED);
+    djvutang_metadata_destroy(scan);
+    STATUS(djvutang_metadata_start(doc, &scan), DJVUTANG_OK);
+    for (;;) {
+        djvutang_status state = djvutang_metadata_step(scan, 7);
+        if (state == DJVUTANG_OK) break;
+        CHECK(state == DJVUTANG_PROGRESS);
+        djvutang_metadata_request request;
+        STATUS(djvutang_metadata_range(scan, &request), DJVUTANG_OK);
+        if (!request.length) continue;
+        djvutang_component component;
+        STATUS(djvutang_get_component(doc, request.component, &component), DJVUTANG_OK);
+        char name[256];
+        CHECK(component.name_size < 200);
+        snprintf(name, sizeof(name), "metadata-indirect/%.*s", (int)component.name_size, (const char *)component.name);
+        bytes file = load(name);
+        CHECK((size_t)request.offset + request.length <= file.size);
+        STATUS(djvutang_metadata_provide(scan, file.data + request.offset, request.length, (uint32_t)file.size), DJVUTANG_OK);
+        free(file.data);
+    }
+    djvutang_metadata_cancel(scan); /* A completed result survives late cancellation. */
+    STATUS(djvutang_metadata_json(scan, &annotations), DJVUTANG_OK);
+    djvutang_metadata_destroy(scan);
+    STATUS(djvutang_close(doc), DJVUTANG_OK);
+    free(input.data);
+    CHECK(annotations.size > 100 && memcmp(annotations.data, "{\"metadata\":", 12) == 0);
+    djvutang_buffer_free(&annotations);
 }
 
 static void components_and_thumbnails(void) {

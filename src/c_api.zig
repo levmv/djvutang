@@ -38,6 +38,17 @@ const Job = struct {
     // Keep the translated allocation error after another call resets denied.
     failure: ?Status = null,
 };
+const MetadataScan = struct {
+    owner: *Document,
+    value: djvu.MetadataScan,
+    failure: ?Status = null,
+
+    fn fail(self: *MetadataScan, err: djvu.Error) Status {
+        const status = self.owner.fail(err);
+        self.failure = status;
+        return status;
+    }
+};
 const PageInfo = extern struct { width: u32, height: u32, dpi: u32, rotation: u32 };
 const Region = extern struct { x: u32, y: u32, width: u32, height: u32 };
 const Options = extern struct {
@@ -107,7 +118,7 @@ export fn djvutang_open(data: ?[*]const u8, size: usize, memory_limit: usize, ou
 
 export fn djvutang_close(document: ?*Document) Status {
     const doc = document orelse return .ok;
-    if (doc.value.busy) return .busy;
+    if (doc.value.busy or doc.value.metadata_busy) return .busy;
     doc.value.deinit();
     std.debug.assert(doc.budget.live == 0);
     allocator.destroy(doc);
@@ -258,6 +269,81 @@ export fn djvutang_provide_component(document: ?*Document, index: u32, data: ?[*
         return doc.fail(err);
     };
     return .ok;
+}
+
+export fn djvutang_get_component(document: ?*const Document, index: u32, out: ?*Component) Status {
+    const doc = document orelse return .invalid_argument;
+    const result = out orelse return .invalid_argument;
+    if (index >= doc.value.components.items.len) return .invalid_argument;
+    const c = doc.value.components.items[index];
+    result.* = .{ .index = index, .id = c.id.ptr, .id_size = c.id.len, .name = c.name.ptr, .name_size = c.name.len };
+    return .ok;
+}
+
+export fn djvutang_metadata_start(document: ?*Document, out: ?*?*MetadataScan) Status {
+    const result = out orelse return .invalid_argument;
+    result.* = null;
+    const doc = document orelse return .invalid_argument;
+    doc.budget.denied = null;
+    const scan = doc.budget.allocator().create(MetadataScan) catch |err| return doc.fail(err);
+    scan.* = .{ .owner = doc, .value = djvu.MetadataScan.init(&doc.value) catch |err| {
+        doc.budget.allocator().destroy(scan);
+        return doc.fail(err);
+    } };
+    result.* = scan;
+    return .ok;
+}
+
+export fn djvutang_metadata_step(handle: ?*MetadataScan, work: u32) Status {
+    const scan = handle orelse return .invalid_argument;
+    if (scan.failure) |failure| return failure;
+    scan.owner.budget.denied = null;
+    const state = scan.value.step(work) catch |err| return scan.fail(err);
+    return if (state == .done) .ok else .progress;
+}
+
+export fn djvutang_metadata_range(handle: ?*MetadataScan, out: ?*djvu.MetadataRequest) Status {
+    const scan = handle orelse return .invalid_argument;
+    const result = out orelse return .invalid_argument;
+    result.* = .{ .component = std.math.maxInt(u32), .offset = 0, .length = 0 };
+    if (scan.failure) |failure| return failure;
+    result.* = (scan.value.nextRange() catch |err| return scan.fail(err)) orelse return .ok;
+    return .ok;
+}
+
+export fn djvutang_metadata_provide(handle: ?*MetadataScan, data: ?[*]const u8, size: usize, source_size: u32) Status {
+    const scan = handle orelse return .invalid_argument;
+    const bytes = data orelse return .invalid_argument;
+    if (scan.failure) |failure| return failure;
+    scan.owner.budget.denied = null;
+    scan.value.provide(bytes[0..size], source_size) catch |err| return scan.fail(err);
+    return .ok;
+}
+
+export fn djvutang_metadata_json(handle: ?*MetadataScan, out: ?*Buffer) Status {
+    const result = out orelse return .invalid_argument;
+    result.* = .{};
+    const scan = handle orelse return .invalid_argument;
+    if (scan.failure) |failure| return failure;
+    scan.owner.budget.denied = null;
+    var value = scan.value.takeResult() catch |err| return scan.fail(err);
+    defer value.deinit();
+    const a = scan.owner.budget.allocator();
+    const json = std.json.Stringify.valueAlloc(a, &value, .{}) catch |err| return scan.fail(err);
+    defer a.free(json);
+    result.* = Buffer.owned(allocator.dupe(u8, json) catch |err| return scan.fail(err));
+    return .ok;
+}
+
+export fn djvutang_metadata_cancel(handle: ?*MetadataScan) void {
+    if (handle) |scan| scan.value.cancel();
+}
+
+export fn djvutang_metadata_destroy(handle: ?*MetadataScan) void {
+    const scan = handle orelse return;
+    const a = scan.owner.budget.allocator();
+    scan.value.deinit();
+    a.destroy(scan);
 }
 
 export fn djvutang_text(document: ?*Document, page: u32, out: ?*Buffer) Status {

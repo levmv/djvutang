@@ -94,7 +94,8 @@ const Directory = struct {
 /// Opens an immutable file through exact byte-range requests. Keeps DIRM/NAVM;
 /// indexed FORM headers are checked when components are supplied to Document.
 /// Zero DIRM sizes require header reads; gaps are scanned for late metadata.
-/// Single-page files are read whole. Always deinit, including after finish/error.
+/// DJVU pages retain NAVM only; standalone IW44/THUM are read whole.
+/// Always deinit, including after finish/error.
 pub const DocumentSource = struct {
     const Location = struct { kind: [4]u8, length: u32 };
 
@@ -107,6 +108,7 @@ pub const DocumentSource = struct {
     directory: ?Directory = null,
     locations: std.AutoHashMapUnmanaged(u32, Location) = .empty,
     bundled_container: bool = false,
+    single_page: bool = false,
     root_end: u32 = 0,
     cursor: u32 = 16,
     chunk_end: u32 = 0,
@@ -157,13 +159,14 @@ pub const DocumentSource = struct {
                 const kind = bytes[start + 8 ..][0..4];
                 if (start == 0 and !iff.isIw44(kind)) return error.InvalidData;
                 self.bundled_container = iff.tag(kind, "DJVM");
+                self.single_page = iff.tag(kind, "DJVU");
                 if (!self.bundled_container and !iff.tag(kind, "DJVU") and
                     !iff.tag(kind, "THUM") and !iff.isIw44(kind))
                 {
                     return error.Unsupported;
                 }
                 try self.append(bytes);
-                if (self.bundled_container) {
+                if (self.bundled_container or self.single_page) {
                     self.root_end = @intCast(end);
                     try self.nextChunk();
                 } else {
@@ -184,7 +187,7 @@ pub const DocumentSource = struct {
                 const end = @as(u64, self.cursor) + 8 + length;
                 if (end > self.root_end) return error.InvalidData;
                 self.chunk_end = @intCast(end + @intFromBool(length & 1 != 0 and end < self.root_end));
-                if (self.chunks == 0 and !iff.tag(bytes[0..4], "DIRM")) return error.InvalidData;
+                if (self.bundled_container and self.chunks == 0 and !iff.tag(bytes[0..4], "DIRM")) return error.InvalidData;
                 try self.countChunk(iff.tag(bytes[0..4], "FORM"));
                 if (self.locations.getPtr(self.cursor)) |location| {
                     // Only zero-sized entries reach this path. Read their size
@@ -193,14 +196,14 @@ pub const DocumentSource = struct {
                     location.length = length + 8;
                     self.visited += 1;
                     try self.advance();
-                } else if (self.chunks == 1 or iff.tag(bytes[0..4], "NAVM")) {
+                } else if ((self.bundled_container and self.chunks == 1) or iff.tag(bytes[0..4], "NAVM")) {
                     try self.append(bytes);
                     const retained_end = @as(u64, self.index.items.len) + length + (length & 1);
                     if (retained_end > self.limits.max_input_bytes) return error.LimitExceeded;
                     self.stage = .metadata;
                     self.request = .{ .offset = self.cursor + 8, .length = length };
                     if (length == 0) {
-                        if (self.chunks == 1) return error.InvalidData;
+                        if (self.bundled_container and self.chunks == 1) return error.InvalidData;
                         try self.advance();
                     }
                 } else try self.advance();
@@ -208,7 +211,7 @@ pub const DocumentSource = struct {
             .metadata => {
                 try self.append(bytes);
                 if (bytes.len & 1 != 0) try self.append(&.{0});
-                if (self.chunks == 1) try self.readDirectory(bytes);
+                if (self.bundled_container and self.chunks == 1) try self.readDirectory(bytes);
                 try self.advance();
             },
             else => unreachable,
@@ -251,7 +254,7 @@ pub const DocumentSource = struct {
     fn countChunk(self: *DocumentSource, form: bool) Error!void {
         self.chunks += 1;
         if (self.chunks > self.limits.max_chunks) return error.LimitExceeded;
-        if (form) {
+        if (form and self.bundled_container) {
             if (self.directory.?.indirect) return error.InvalidData;
             self.forms += 1;
             if (self.forms > self.limits.max_components) return error.LimitExceeded;
@@ -276,9 +279,11 @@ pub const DocumentSource = struct {
             if (location.length & 1 != 0 and self.cursor < self.root_end) self.cursor += 1;
         }
         if (self.cursor == self.root_end) {
-            if (self.chunks == 0 or self.visited != self.locations.count()) return error.InvalidData;
-            for (self.directory.?.components.items) |*component| {
-                if (component.range) |*range| range.length = self.locations.get(range.offset).?.length;
+            if (self.bundled_container) {
+                if (self.chunks == 0 or self.visited != self.locations.count()) return error.InvalidData;
+                for (self.directory.?.components.items) |*component| {
+                    if (component.range) |*range| range.length = self.locations.get(range.offset).?.length;
+                }
             }
             self.stage = .done;
             std.mem.writeInt(u32, self.index.items[8..12], @intCast(self.index.items.len - 12), .big);
@@ -304,21 +309,27 @@ pub const DocumentSource = struct {
         if (self.bundled_container) {
             doc.adoptDirectory(self.directory.?);
             self.directory = null;
+        } else if (self.single_page) {
+            doc.components.items[0].form = null;
+            doc.components.items[0].size = self.root_end - 4;
+            doc.components.items[0].range = .{ .offset = 4, .length = self.root_end - 4 };
         }
         // The retained index and parsed directory now have one owner.
         doc.owned_input = bytes;
+        doc.source_size = self.size;
         return doc;
     }
 };
 
 /// Input bytes stay immutable and alive until deinit. Keep the Document address
-/// stable while a Job or Chunks iterator borrows it. Only one Job may live at a time;
-/// decoded shared dictionaries are immutable.
+/// stable while a Job, MetadataScan or Chunks iterator borrows it. Only one Job
+/// may live at a time; decoded shared dictionaries are immutable.
 pub const Document = struct {
     allocator: std.mem.Allocator,
     limits: types.Limits,
     bytes: []const u8,
     owned_input: ?[]u8 = null,
+    source_size: u32 = 0,
     container: iff.Chunk,
     components: std.ArrayList(Component) = .empty,
     pages: std.ArrayList(usize) = .empty,
@@ -328,6 +339,7 @@ pub const Document = struct {
     names: []u8 = &.{},
     id_index: std.StringHashMapUnmanaged(usize) = .empty,
     busy: bool = false,
+    metadata_busy: bool = false,
     dictionary_decodes: usize = 0,
     indirect: bool = false,
     cache: component_module.Cache = .{},
@@ -375,7 +387,7 @@ pub const Document = struct {
     }
 
     pub fn deinit(self: *Document) void {
-        std.debug.assert(!self.busy);
+        std.debug.assert(!self.busy and !self.metadata_busy);
         self.cache.clear(self.allocator, self.components.items);
         for (self.components.items) |component| {
             if (component.owned_id) |id| self.allocator.free(id);
@@ -434,31 +446,40 @@ pub const Document = struct {
         while (try iter.next()) |chunk| {
             count += 1;
             if (count > self.limits.max_chunks) return error.LimitExceeded;
-            if (!iff.tag(chunk.id, "INCL") or self.id_index.contains(chunk.data)) continue;
-            const id = std.mem.trimEnd(u8, chunk.data, "\x00\r\n");
-            if (id.len == 0 or std.mem.indexOfScalar(u8, id, 0) != null or !std.unicode.utf8ValidateSlice(id)) {
-                return error.InvalidData;
-            }
-            if (self.id_index.contains(id)) continue;
-            if (self.components.items.len >= self.limits.max_components or
-                self.include_name_bytes > self.limits.max_input_bytes or
-                id.len > self.limits.max_input_bytes - self.include_name_bytes)
-            {
-                return error.LimitExceeded;
-            }
-            try self.components.ensureUnusedCapacity(self.allocator, 1);
-            try self.id_index.ensureUnusedCapacity(self.allocator, 1);
-            const owned = try self.allocator.dupe(u8, id);
-            self.id_index.putAssumeCapacityNoClobber(owned, self.components.items.len);
-            self.components.appendAssumeCapacity(.{
-                .id = owned,
-                .name = owned,
-                .title = owned,
-                .kind = .shared,
-                .owned_id = owned,
-            });
-            self.include_name_bytes += owned.len;
+            if (iff.tag(chunk.id, "INCL")) _ = try self.includeComponent(chunk.data);
         }
+    }
+
+    /// Resolve an include, registering host-resolved names for a standalone DJVU.
+    /// Component indexes survive registration; pointers into the array do not.
+    pub fn includeComponent(self: *Document, raw: []const u8) Error!usize {
+        if (!iff.tag(try self.container.formType(), "DJVU")) return self.resolve(raw);
+        if (self.id_index.get(raw)) |index| return index;
+        const id = std.mem.trimEnd(u8, raw, "\x00\r\n");
+        if (id.len == 0 or std.mem.indexOfScalar(u8, id, 0) != null or !std.unicode.utf8ValidateSlice(id)) {
+            return error.InvalidData;
+        }
+        if (self.id_index.get(id)) |index| return index;
+        if (self.components.items.len >= self.limits.max_components or
+            self.include_name_bytes > self.limits.max_input_bytes or
+            id.len > self.limits.max_input_bytes - self.include_name_bytes)
+        {
+            return error.LimitExceeded;
+        }
+        try self.components.ensureUnusedCapacity(self.allocator, 1);
+        try self.id_index.ensureUnusedCapacity(self.allocator, 1);
+        const owned = try self.allocator.dupe(u8, id);
+        const index = self.components.items.len;
+        self.id_index.putAssumeCapacityNoClobber(owned, index);
+        self.components.appendAssumeCapacity(.{
+            .id = owned,
+            .name = owned,
+            .title = owned,
+            .kind = .shared,
+            .owned_id = owned,
+        });
+        self.include_name_bytes += owned.len;
+        return index;
     }
 
     pub fn pageCount(self: *const Document) usize {
@@ -671,10 +692,10 @@ pub const Document = struct {
     }
 
     /// Evict older input/dictionaries until their retained bytes fit the limit.
-    /// Finish borrowed chunk/iterator use first. Active or completed Jobs return
-    /// Busy; deinit the Job before trimming. Owned metadata snapshots remain valid.
+    /// Finish borrowed chunk/iterator use first. Jobs and metadata scans return
+    /// Busy until deinit. Owned metadata snapshots remain valid.
     pub fn trimCache(self: *Document, limit: usize) Error!void {
-        if (self.busy) return error.Busy;
+        if (self.busy or self.metadata_busy) return error.Busy;
         self.cache.trim(self.allocator, self.components.items, limit);
     }
 
@@ -732,7 +753,7 @@ pub const Document = struct {
 
     /// Release supplied files and dictionaries; IDs and component indexes survive.
     pub fn dropComponents(self: *Document) Error!void {
-        if (self.busy) return error.Busy;
+        if (self.busy or self.metadata_busy) return error.Busy;
         self.cache.clear(self.allocator, self.components.items);
     }
 

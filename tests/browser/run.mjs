@@ -15,7 +15,7 @@ const routes = new Map([
   ['/web/worker.mjs', ['web/worker.mjs', 'text/javascript']],
   ['/tests/support/resample.mjs', ['tests/support/resample.mjs', 'text/javascript']],
 ]);
-for (const name of ['api', 'source', 'text', 'components', 'annotations', 'outline', 'thumbnails', 'previews']) {
+for (const name of ['api', 'source', 'text', 'components', 'annotations', 'metadata', 'outline', 'thumbnails', 'previews']) {
   const path = `tests/browser/${name}.mjs`;
   routes.set(`/${path}`, [path, 'text/javascript']);
 }
@@ -207,6 +207,8 @@ try {
           await testComponents(DjvuDecoder, bytes);
           const { testAnnotations } = await import('/tests/browser/annotations.mjs');
           await testAnnotations(DjvuDecoder, bytes);
+          const { testMetadata } = await import('/tests/browser/metadata.mjs');
+          await testMetadata(DjvuDecoder, bytes);
           const { testOutline } = await import('/tests/browser/outline.mjs');
           await testOutline(DjvuDecoder, bytes);
           const { testThumbnails } = await import('/tests/browser/thumbnails.mjs');

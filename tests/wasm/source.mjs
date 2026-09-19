@@ -81,7 +81,7 @@ function verify(bytes, label, thumbnailsOnly = false) {
   const reads = [];
   openSource(bytes.length, (offset, length) => { reads.push({ offset, length }); return bytes.subarray(offset, offset + length); });
   const components = Array.from({ length: core.component_count() }, (_, i) => componentInfo(core, i));
-  for (const { range, size } of components) if (range) {
+  for (const { range, size } of components) if (range && bytes.toString('ascii', 12, 16) === 'DJVM') {
     const allowedEnd = range.offset + (size === 0 ? 12 : 0);
     assert(!reads.some(r => r.offset < range.offset + range.length && r.offset + r.length > allowedEnd), `${label}: opening read an indexed component`);
   }

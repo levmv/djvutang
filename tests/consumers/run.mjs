@@ -29,7 +29,8 @@ let server;
 try {
   await cp(join(root, 'zig-out/dist'), join(temp, 'djvu'), { recursive: true });
   await cp(join(root, 'examples/browser/preview.ts'), join(temp, 'preview.ts'));
-  run(process.execPath, [join(modules, 'typescript/bin/tsc'), '--strict', '--noEmit', '--target', 'es2018', '--module', 'esnext', '--moduleResolution', 'bundler', '--lib', 'es2018,dom', 'preview.ts']);
+  await cp(join(root, 'examples/browser/inspect.ts'), join(temp, 'inspect.ts'));
+  run(process.execPath, [join(modules, 'typescript/bin/tsc'), '--strict', '--noEmit', '--target', 'es2018', '--module', 'esnext', '--moduleResolution', 'bundler', '--lib', 'es2018,dom', 'preview.ts', 'inspect.ts']);
   for (const bundle of [false, true]) await esbuild.build({
     absWorkingDir: temp, entryPoints: ['preview.ts'], bundle, format: 'esm', target: 'es2020',
     outfile: join(temp, bundle ? 'bundled.mjs' : 'plain.mjs'), logLevel: 'silent',

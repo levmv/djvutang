@@ -9,6 +9,7 @@ let active;
 let lastPage;
 let source;
 let opening;
+let metadataActive;
 let cacheLimit = 0;
 let requestSequence = 0;
 let renderTiming = { steps: 0, maxStepMs: 0 };
@@ -59,8 +60,16 @@ function begin(id) {
   return token;
 }
 
+function stopMetadata() {
+  if (!metadataActive) return;
+  metadataActive.controller.abort();
+  metadataActive = null;
+  core.metadata_release();
+}
+
 function invalidate() {
   stop();
+  stopMetadata();
   for (const token of operations) token.controller.abort();
   lastPage = undefined;
 }
@@ -103,11 +112,15 @@ function response(message) {
     if (message.error) throw new Error(message.error);
     if (!(message.bytes instanceof ArrayBuffer)) throw new Error('InvalidArgument');
     if (!message.bytes.byteLength || message.bytes.byteLength > 128 * 1024 * 1024) throw new Error('LimitExceeded');
-    if (load.range && message.bytes.byteLength !== load.range.length) throw new Error('InvalidArgument');
-    const ptr = load.range ? core.source_alloc() : core.component_alloc(load.index, message.bytes.byteLength);
+    const whole = load.metadata && message.whole;
+    if (load.range && !whole && message.bytes.byteLength !== load.range.length) throw new Error('InvalidArgument');
+    if (load.index !== null && (!load.range || whole) && component(load.index).loaded) { settle(load); return; }
+    const ptr = load.metadata && !whole ? core.metadata_alloc()
+      : load.range && !whole ? core.source_alloc() : core.component_alloc(load.index, message.bytes.byteLength);
     if (!ptr) check(core.last_status());
     new Uint8Array(core.memory.buffer, ptr, message.bytes.byteLength).set(new Uint8Array(message.bytes));
-    check(load.range ? core.source_commit() : core.component_commit(load.index));
+    check(load.metadata && !whole ? core.metadata_commit(integer(message.size, 1, 0xffffffff))
+      : load.range && !whole ? core.source_commit() : core.component_commit(load.index));
     settle(load);
   } catch (error) {
     core.component_abort();
@@ -115,23 +128,26 @@ function response(message) {
   }
 }
 
-async function loadBytes(index, range, token) {
+async function loadBytes(index, range, token, metadata = false) {
   const signal = token.controller.signal;
   if (signal.aborted) throw new Error('Cancelled');
-  const key = range ? `source:${source}:${range.offset}` : index;
+  const key = metadata ? `metadata:${source}:${index}:${range.offset}`
+    : range ? `source:${source}:${range.offset}` : index;
   let load = loads.get(key);
   if (!load) {
-    const metadata = range
+    const request = metadata
+      ? { type: 'metadata-request', range, component: index === null ? null : component(index) }
+      : range
       ? { type: 'range-request', range }
       : { type: 'component-request', component: component(index) };
-    load = { key, index, range, request: ++requestSequence, users: 0, done: false };
+    load = { key, index, range, metadata, request: ++requestSequence, users: 0, done: false };
     load.promise = new Promise((resolve, reject) => {
       load.resolve = resolve;
       load.reject = reject;
     });
     loads.set(key, load);
     requests.set(load.request, load);
-    postMessage({ ...metadata, request: load.request, source });
+    postMessage({ ...request, request: load.request, source });
   }
   load.users++;
   let abort;
@@ -376,6 +392,46 @@ async function render(message) {
   } finally { operations.delete(token); }
 }
 
+async function metadata(message) {
+  if (metadataActive) throw new Error('Busy');
+  check(core.metadata_start());
+  const token = begin(message.id);
+  metadataActive = token;
+  try {
+    let deadline = 0;
+    while (!token.controller.signal.aborted) {
+      const status = core.metadata_step(128);
+      if (status !== 1) {
+        check(status);
+        const bytes = new Uint8Array(core.memory.buffer, core.metadata_ptr(), core.metadata_len());
+        const result = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+        postMessage({ id: message.id, result });
+        return;
+      }
+      const ptr = core.metadata_range();
+      check(core.last_status());
+      if (ptr) {
+        const view = new DataView(core.memory.buffer, ptr, 12);
+        const index = view.getUint32(0, true);
+        await loadBytes(index === 0xffffffff ? null : index, {
+          offset: view.getUint32(4, true), length: view.getUint32(8, true),
+        }, token, true);
+      }
+      if (performance.now() >= deadline) {
+        await yieldTask();
+        deadline = performance.now() + 4;
+      }
+    }
+    throw new Error('Cancelled');
+  } finally {
+    operations.delete(token);
+    if (metadataActive === token) {
+      metadataActive = null;
+      core.metadata_release();
+    }
+  }
+}
+
 async function openDocument(message) {
   invalidate();
   core.close();
@@ -453,6 +509,8 @@ self.onmessage = async ({ data: message }) => {
         await read(message, page, scopes.includes, () => readJson(message.id, 'annotations', page));
         break;
       }
+      case 'metadata': await metadata(message); break;
+      case 'cancel-metadata': stopMetadata(); reply(message.id); break;
       case 'outline': readJson(message.id, 'outline'); break;
       case 'resolve-link': resolveLink(message); break;
       case 'cancel':

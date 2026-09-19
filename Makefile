@@ -43,6 +43,7 @@ wasm-test: wasm
 	node tests/wasm/text.mjs
 	node tests/wasm/components.mjs
 	node tests/wasm/annotations.mjs
+	node tests/wasm/metadata.mjs
 	node tests/wasm/outline.mjs
 	node tests/wasm/thumbnails.mjs
 

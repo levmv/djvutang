@@ -10,6 +10,7 @@ extern "C" {
 
 typedef struct djvutang_document djvutang_document;
 typedef struct djvutang_job djvutang_job;
+typedef struct djvutang_metadata_scan djvutang_metadata_scan;
 typedef int32_t djvutang_status;
 
 enum {
@@ -26,8 +27,8 @@ enum {
 };
 
 /* Page and component indexes start at zero. Calls using the same document or
- * its job must be serialized, including cancellation and destruction. Different
- * documents are independent. Pointers must be valid for their stated lifetime. */
+ * its job/scan must be serialized, including cancellation and destruction.
+ * Different documents are independent. Pointers must be valid for their stated lifetime. */
 
 typedef struct {
     uint32_t width, height, dpi, rotation;
@@ -71,8 +72,8 @@ typedef struct {
  * On failure, *out is NULL. IO stays with the caller. */
 djvutang_status djvutang_open(const uint8_t *data, size_t size,
                              size_t memory_limit, djvutang_document **out);
-/* A live job, even completed or cancelled, returns BUSY and keeps the document
- * open. Destroy the job first. NULL is accepted. */
+/* A live job or metadata scan, even completed or cancelled, keeps the document
+ * open with BUSY. Destroy jobs/scans first. NULL is accepted. */
 djvutang_status djvutang_close(djvutang_document *document);
 uint32_t djvutang_page_count(const djvutang_document *document);
 djvutang_status djvutang_get_page_info(djvutang_document *document, uint32_t page,
@@ -83,7 +84,7 @@ djvutang_status djvutang_get_geometry(djvutang_document *document, uint32_t page
 djvutang_status djvutang_get_memory(const djvutang_document *document,
                                    djvutang_memory *out);
 /* Evicts supplied components and shared dictionaries. Returns BUSY while a job
- * exists; does not free the borrowed input. limit=0 drops all idle cache. */
+ * or metadata scan exists; does not free borrowed input. limit=0 drops all idle cache. */
 djvutang_status djvutang_trim_cache(djvutang_document *document, size_t limit);
 
 /* One job per document. Start functions set *out to NULL on failure. */
@@ -134,11 +135,46 @@ djvutang_status djvutang_next_missing(djvutang_document *document, uint32_t page
 djvutang_status djvutang_provide_component(djvutang_document *document,
                                           uint32_t index, const uint8_t *data,
                                           size_t size);
+/* Looks up an index from metadata_range; strings are borrowed until close. */
+djvutang_status djvutang_get_component(const djvutang_document *document,
+                                      uint32_t index, djvutang_component *out);
 
 typedef struct {
     const uint8_t *data;
     size_t size;
 } djvutang_buffer;
+
+typedef struct {
+    uint32_t component, offset, length;
+} djvutang_metadata_request;
+
+/* Complete metadata discovery; no image/OCR/dictionary decoding. One scan per
+ * document. Keep the document alive; input eviction/close return BUSY until the
+ * scan is destroyed. Work counts structural operations, not time. Individual
+ * annotation streams are parsed synchronously under byte/node limits. */
+djvutang_status djvutang_metadata_start(djvutang_document *document,
+                                       djvutang_metadata_scan **out);
+/* work > 0. PROGRESS means step again or supply metadata_range; OK means complete. */
+djvutang_status djvutang_metadata_step(djvutang_metadata_scan *scan, uint32_t work);
+/* length=0 means no pending read. UINT32_MAX addresses the original source;
+ * other component indexes address external AT&T-prefixed files. get_component
+ * supplies their names. A host may also provide a whole missing component. */
+djvutang_status djvutang_metadata_range(djvutang_metadata_scan *scan,
+                                       djvutang_metadata_request *out);
+/* Borrows exactly the pending bytes for this call. source_size is the full
+ * size of the original/external file, allowing skipped payload bounds checks. */
+djvutang_status djvutang_metadata_provide(djvutang_metadata_scan *scan,
+                                         const uint8_t *data, size_t size,
+                                         uint32_t source_size);
+/* Call once after completion. Owned JSON, freed with buffer_free; empty arrays
+ * confirm absence. Contains metadata:[{key,value,page}] and xmp:[{value,page}].
+ * Keys and duplicate entries are preserved; page is zero-based or null for shared
+ * annotations. */
+djvutang_status djvutang_metadata_json(djvutang_metadata_scan *scan, djvutang_buffer *out);
+/* Cancel unfinished work; completed results and earlier failures are unaffected.
+ * Both functions accept NULL. Always destroy the scan, including after failure. */
+void djvutang_metadata_cancel(djvutang_metadata_scan *scan);
+void djvutang_metadata_destroy(djvutang_metadata_scan *scan);
 
 /* Owned UTF-8 snapshots, independent of the document and render job. data=NULL
  * means absent; a present empty value has non-NULL data and size=0. Data is not

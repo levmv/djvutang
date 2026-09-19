@@ -13,6 +13,11 @@ var job_thumbnail = false;
 var job_denial: ?djvu.Budget.Denial = null;
 var page_text: ?djvu.PageText = null;
 var annotation_json: ?[]u8 = null;
+var metadata_scan: ?djvu.MetadataScan = null;
+var metadata_request: djvu.MetadataRequest = undefined;
+var metadata_input: []u8 = &.{};
+var metadata_json: ?[]u8 = null;
+var metadata_denial: ?djvu.Budget.Denial = null;
 var outline_json: ?[]u8 = null;
 var link_input: ?[]u8 = null;
 const LinkResult = extern struct { kind: u32, page: u32 };
@@ -57,6 +62,7 @@ var transform_result: TransformResult = undefined;
 
 comptime {
     std.debug.assert(@sizeOf(djvu.TextZone) == 36);
+    std.debug.assert(@sizeOf(djvu.MetadataRequest) == 12);
     std.debug.assert(@offsetOf(djvu.TextZone, "text_start") == 24);
     std.debug.assert(@sizeOf(TransformResult) == 128);
     std.debug.assert(@offsetOf(TransformResult, "matrix") == 32);
@@ -119,6 +125,7 @@ export fn close() void {
     clearJob();
     text_release();
     annotations_release();
+    metadata_release();
     outline_release();
     link_release();
     component_abort();
@@ -693,6 +700,121 @@ export fn annotations_len() u32 {
 export fn annotations_release() void {
     if (annotation_json) |data| budget.allocator().free(data);
     annotation_json = null;
+}
+
+/// Complete metadata discovery is explicit and independent of rendering.
+export fn metadata_start() u32 {
+    const doc = if (document) |*doc| doc else return fail(error.InvalidArgument, @src().fn_name);
+    if (metadata_scan != null) return fail(error.Busy, @src().fn_name);
+    metadata_release();
+    budget.denied = null;
+    metadata_scan = djvu.MetadataScan.init(doc) catch |err| return fail(err, @src().fn_name);
+    status = 0;
+    return 0;
+}
+
+fn metadataFailure(err: djvu.Error, operation: []const u8) u32 {
+    metadata_denial = budget.denied;
+    if (metadata_scan) |*scan| scan.failure = err;
+    return fail(err, operation);
+}
+
+/// 1 means more work/input; inspect metadata_range, supply it if present, and
+/// step again. 0 publishes a complete JSON snapshot, including an empty result.
+export fn metadata_step(work: u32) u32 {
+    const scan = if (metadata_scan) |*s| s else {
+        if (metadata_json != null) {
+            status = 0;
+            return 0;
+        }
+        return fail(error.InvalidArgument, @src().fn_name);
+    };
+    if (scan.failure) |err| {
+        budget.denied = metadata_denial;
+        return fail(err, @src().fn_name);
+    }
+    budget.denied = null;
+    const result = scan.step(work) catch |err| return metadataFailure(err, @src().fn_name);
+    if (result != .done) {
+        status = 1;
+        return 1;
+    }
+    var value = scan.takeResult() catch |err| return metadataFailure(err, @src().fn_name);
+    defer value.deinit();
+    metadata_json = std.json.Stringify.valueAlloc(budget.allocator(), &value, .{}) catch |err| return metadataFailure(err, @src().fn_name);
+    scan.deinit();
+    metadata_scan = null;
+    status = 0;
+    return 0;
+}
+
+/// Pointer to component/offset/length u32 words. Component 0xffffffff is the
+/// original input; other indexes identify external AT&T-prefixed files.
+export fn metadata_range() u32 {
+    const scan = if (metadata_scan) |*s| s else {
+        if (metadata_json != null) status = 0 else _ = fail(error.InvalidArgument, @src().fn_name);
+        return 0;
+    };
+    const range = scan.nextRange() catch |err| {
+        budget.denied = metadata_denial;
+        _ = fail(err, @src().fn_name);
+        return 0;
+    };
+    status = 0;
+    metadata_request = range orelse return 0;
+    return @intFromPtr(&metadata_request);
+}
+
+export fn metadata_alloc() u32 {
+    if (metadata_range() == 0) {
+        if (status == 0) _ = fail(error.InvalidArgument, @src().fn_name);
+        return 0;
+    }
+    budget.allocator().free(metadata_input);
+    metadata_input = &.{};
+    budget.denied = null;
+    metadata_input = budget.allocator().alloc(u8, metadata_request.length) catch |err| {
+        _ = fail(err, @src().fn_name);
+        return 0;
+    };
+    return @intFromPtr(metadata_input.ptr);
+}
+
+/// source_size is the full size of the file addressed by metadata_range.
+export fn metadata_commit(source_size: u32) u32 {
+    const scan = if (metadata_scan) |*s| s else return fail(error.InvalidArgument, @src().fn_name);
+    if (metadata_input.len == 0) return fail(error.InvalidArgument, @src().fn_name);
+    const bytes = metadata_input;
+    metadata_input = &.{};
+    defer budget.allocator().free(bytes);
+    budget.denied = null;
+    scan.provide(bytes, source_size) catch |err| return metadataFailure(err, @src().fn_name);
+    status = 0;
+    return 0;
+}
+
+export fn metadata_ptr() u32 {
+    return if (metadata_json) |bytes| @intFromPtr(bytes.ptr) else 0;
+}
+
+export fn metadata_len() u32 {
+    return if (metadata_json) |bytes| @intCast(bytes.len) else 0;
+}
+
+export fn metadata_cancel() void {
+    if (metadata_scan) |*scan| scan.cancel();
+    budget.allocator().free(metadata_input);
+    metadata_input = &.{};
+}
+
+export fn metadata_release() void {
+    if (metadata_scan) |*scan| scan.deinit();
+    metadata_scan = null;
+    budget.allocator().free(metadata_input);
+    metadata_input = &.{};
+    if (metadata_json) |bytes| budget.allocator().free(bytes);
+    metadata_json = null;
+    metadata_denial = null;
 }
 
 export fn outline_load() u32 {

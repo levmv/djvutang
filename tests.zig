@@ -10,6 +10,7 @@ test {
     _ = @import("tests/native/jpeg.zig");
     _ = @import("tests/native/components.zig");
     _ = @import("tests/native/annotations.zig");
+    _ = @import("tests/native/metadata.zig");
     _ = @import("tests/native/outline.zig");
     _ = @import("tests/native/thumbnails.zig");
     _ = @import("tests/native/iw44-document.zig");

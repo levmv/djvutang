@@ -153,11 +153,8 @@ pub const Annotations = struct {
                 var entries = parser.children(i);
                 _ = entries.next();
                 while (entries.next()) |entry| {
-                    var pair = parser.children(entry);
-                    const key = parser.symbol(pair.next()) orelse continue;
-                    const value = parser.string(pair.next()) orelse continue;
-                    if (pair.next() == null) {
-                        try metadata.append(a, .{ .key = key, .value = value, .expression = expression });
+                    if (parser.metadataEntry(entry)) |field| {
+                        try metadata.append(a, .{ .key = field.key, .value = field.value, .expression = expression });
                     }
                 }
             } else if (eq(name, "phead") or eq(name, "pfoot")) {
@@ -195,6 +192,52 @@ pub const Annotations = struct {
         result.metadata = try metadata.toOwnedSlice(a);
         result.arena = arena;
         return result;
+    }
+};
+
+/// Metadata-only interpretation of the same ordered annotation stream. No INFO,
+/// image geometry or maparea construction is needed. Spans address input bytes.
+/// Keys borrow those bytes; keep them alive until deinit.
+pub const Fields = struct {
+    pub const Entry = struct { key: []const u8, value: []const u8, span: Span };
+    pub const Xmp = struct { value: []const u8, span: Span };
+    arena: std.heap.ArenaAllocator,
+    metadata: []const Entry,
+    xmp: []const Xmp,
+
+    pub fn deinit(self: *Fields) void {
+        self.arena.deinit();
+        self.* = undefined;
+    }
+
+    pub fn decode(allocator: std.mem.Allocator, bytes: []const u8, limits: types.Limits) Error!Fields {
+        if (bytes.len > @min(limits.max_annotation_bytes, std.math.maxInt(u32))) return error.LimitExceeded;
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
+        const a = arena.allocator();
+        var parser: Parser = .{ .allocator = a, .source = bytes, .legacy = legacyStrings(bytes), .limits = limits };
+        try parser.parse();
+        var metadata: std.ArrayList(Entry) = .empty;
+        var xmp: std.ArrayList(Xmp) = .empty;
+        var i: usize = 0;
+        while (i < parser.nodes.items.len) : (i = parser.nodes.items[i].subtree_end) {
+            var children = parser.children(i);
+            const name = parser.symbol(children.next()) orelse continue;
+            if (eq(name, "metadata")) {
+                while (children.next()) |entry| {
+                    if (parser.metadataEntry(entry)) |field| try metadata.append(a, field);
+                }
+            } else if (eq(name, "xmp")) {
+                const value = parser.string(children.next()) orelse continue;
+                if (children.next() == null) {
+                    const node = parser.nodes.items[i];
+                    try xmp.append(a, .{ .value = value, .span = .{ .start = node.start, .length = node.finish - node.start } });
+                }
+            }
+        }
+        const entries = try metadata.toOwnedSlice(a);
+        const packets = try xmp.toOwnedSlice(a);
+        return .{ .arena = arena, .metadata = entries, .xmp = packets };
     }
 };
 
@@ -392,6 +435,15 @@ const Parser = struct {
     fn string(self: *const Parser, index: ?usize) ?[]const u8 {
         const node = self.nodes.items[index orelse return null];
         return if (node.kind == .string) node.value else null;
+    }
+
+    fn metadataEntry(self: *const Parser, index: usize) ?Fields.Entry {
+        var pair = self.children(index);
+        const key = self.symbol(pair.next()) orelse return null;
+        const value = self.string(pair.next()) orelse return null;
+        if (pair.next() != null) return null;
+        const node = self.nodes.items[index];
+        return .{ .key = key, .value = value, .span = .{ .start = node.start, .length = node.finish - node.start } };
     }
 
     // A repaired identifier could point to a different destination. Keep the
