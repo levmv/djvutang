@@ -5,10 +5,15 @@ const DocumentSource = module.DocumentSource;
 const Job = @import("../../src/job.zig").Job;
 const Budget = @import("../../src/budget.zig").Budget;
 const iff = @import("../../src/iff.zig");
+const Limits = @import("../../src/types.zig").Limits;
 const a = std.testing.allocator;
 
 fn open(allocator: std.mem.Allocator, bytes: []const u8) !Document {
-    var source = try DocumentSource.init(allocator, @intCast(bytes.len), .{});
+    return openLimited(allocator, bytes, .{});
+}
+
+fn openLimited(allocator: std.mem.Allocator, bytes: []const u8, limits: Limits) !Document {
+    var source = try DocumentSource.init(allocator, @intCast(bytes.len), limits);
     defer source.deinit();
     while (try source.nextRange()) |range| try source.provide(bytes[range.offset..][0..range.length]);
     return source.finish();
@@ -40,10 +45,21 @@ test "range documents match complete input for pages shared layers text and thum
         const bytes = @embedFile("../fixtures/" ++ name);
         var full = try Document.open(a, bytes, .{});
         defer full.deinit();
-        var ranged = try open(a, bytes);
+        const bundled = iff.tag(try full.container.formType(), "DJVM");
+        var source = try DocumentSource.init(a, bytes.len, .{});
+        defer source.deinit();
+        while (try source.nextRange()) |range| {
+            if (bundled) for (full.components.items) |component| {
+                if (component.size == 0) continue;
+                const form = component.form.?;
+                try std.testing.expect(range.offset + range.length <= form.offset or
+                    range.offset >= form.offset + 8 + form.data.len);
+            };
+            try source.provide(bytes[range.offset..][0..range.length]);
+        }
+        var ranged = try source.finish();
         defer ranged.deinit();
         try std.testing.expectEqual(full.pageCount(), ranged.pageCount());
-        const bundled = iff.tag(try full.container.formType(), "DJVM");
         if (bundled) for (ranged.components.items) |c| {
             try std.testing.expect(c.range != null and c.form == null);
         };
@@ -95,6 +111,54 @@ test "range documents match complete input for pages shared layers text and thum
     }
 }
 
+test "component header errors are deferred to supply and rejected input remains retryable" {
+    const original = @embedFile("../fixtures/shared.djvu");
+    const offset = std.mem.readInt(u32, original[35..39], .big); // Second page.
+    for (0..4) |corruption| {
+        var bytes: [original.len]u8 = original.*;
+        switch (corruption) {
+            0 => @memcpy(bytes[offset..][0..4], "JUNK"),
+            1 => @memcpy(bytes[offset + 8 ..][0..4], "DJVI"),
+            2 => std.mem.writeInt(u32, bytes[offset + 4 ..][0..4], 4, .big),
+            3 => std.mem.writeInt(u32, bytes[offset + 4 ..][0..4], 0xffffffff, .big),
+            else => unreachable,
+        }
+        try std.testing.expectError(error.InvalidData, Document.open(a, &bytes, .{}));
+        var doc = try open(a, &bytes);
+        defer doc.deinit();
+        try prepare(&doc, &bytes, 0, .includes);
+        try std.testing.expectEqual(@as(u32, 160), (try doc.info(0)).width);
+        const index = (try doc.nextMissing(1, .page)).?;
+        const range = doc.components.items[index].range.?;
+        const wrong = try a.dupe(u8, bytes[range.offset..][0..range.length]);
+        defer a.free(wrong);
+        const retained = doc.suppliedBytes();
+        try std.testing.expectError(error.InvalidData, doc.provideComponent(index, wrong));
+        try std.testing.expectEqual(retained, doc.suppliedBytes());
+        try std.testing.expectEqual(index, (try doc.nextMissing(1, .page)).?);
+        try prepare(&doc, original, 1, .includes);
+        try std.testing.expectEqual(@as(u32, 160), (try doc.info(1)).width);
+    }
+}
+
+test "directory skips reject invalid bounds overlaps and preserve structural limits" {
+    const original = @embedFile("../fixtures/shared.djvu");
+    const first_page = std.mem.readInt(u32, original[31..35], .big);
+    for ([_]u32{ 0, 16, 24, first_page + 1, first_page + 12, original.len - 2, 0xfffffffe }) |offset| {
+        var bytes: [original.len]u8 = original.*;
+        std.mem.writeInt(u32, bytes[35..39], offset, .big);
+        try std.testing.expectError(error.InvalidData, open(a, &bytes));
+    }
+    try std.testing.expectError(error.LimitExceeded, openLimited(a, original, .{ .max_chunks = 3 }));
+    try std.testing.expectError(error.LimitExceeded, openLimited(a, original, .{ .max_components = 2 }));
+    try std.testing.expectError(error.LimitExceeded, openLimited(a, original, .{ .max_input_bytes = 30 }));
+    var extra: [original.len + 8]u8 = undefined;
+    @memcpy(extra[0..original.len], original);
+    @memcpy(extra[original.len..], "FORM\x00\x00\x00\x00");
+    std.mem.writeInt(u32, extra[8..12], extra.len - 12, .big);
+    try std.testing.expectError(error.LimitExceeded, openLimited(a, &extra, .{ .max_components = 3 }));
+}
+
 test "range opening preserves NAVM placement indirect indexes and duplicate errors" {
     inline for (.{
         "outline.djvu",
@@ -123,12 +187,14 @@ test "range opening preserves NAVM placement indirect indexes and duplicate erro
 }
 
 fn allocationCheck(allocator: std.mem.Allocator) !void {
-    const bytes = @embedFile("../fixtures/shared.djvu");
-    var doc = try open(allocator, bytes);
-    defer doc.deinit();
-    try prepare(&doc, bytes, 0, .includes);
-    try doc.dropComponents();
-    try prepare(&doc, bytes, 1, .includes);
+    inline for (.{ "shared.djvu", "outline-late.djvu" }) |name| {
+        const bytes = @embedFile("../fixtures/" ++ name);
+        var doc = try open(allocator, bytes);
+        defer doc.deinit();
+        try prepare(&doc, bytes, 0, .includes);
+        try doc.dropComponents();
+        try prepare(&doc, bytes, 1, .includes);
+    }
 }
 
 test "range opening and component ownership unwind partial allocations" {

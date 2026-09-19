@@ -12,28 +12,107 @@ const types = @import("types.zig");
 const Error = types.Error;
 
 pub const ByteRange = component_module.ByteRange;
-const Location = struct { kind: [4]u8, length: u32, form: ?iff.Chunk = null };
-const Locations = std.AutoHashMapUnmanaged(u32, Location);
+const Forms = std.AutoHashMapUnmanaged(u32, iff.Chunk);
 
 pub const Component = component_module.Component;
 
-/// Opens an immutable file through exact byte-range requests. Keeps DIRM/NAVM
-/// and top-level FORM locations; page payloads are supplied to Document later.
+// DIRM owns its decoded names and logical component order independently of
+// retained container bytes. Range opening can append NAVM without moving them.
+const Directory = struct {
+    components: std.ArrayList(Component) = .empty,
+    pages: std.ArrayList(usize) = .empty,
+    names: []u8 = &.{},
+    id_index: std.StringHashMapUnmanaged(usize) = .empty,
+    indirect: bool = false,
+
+    fn deinit(self: *Directory, allocator: std.mem.Allocator) void {
+        self.components.deinit(allocator);
+        self.pages.deinit(allocator);
+        self.id_index.deinit(allocator);
+        allocator.free(self.names);
+    }
+
+    fn parse(allocator: std.mem.Allocator, bytes: []const u8, limits: types.Limits, physical: ?*const Forms) Error!Directory {
+        var self: Directory = .{};
+        errdefer self.deinit(allocator);
+        var r: iff.Reader = .{ .bytes = bytes };
+        const version = try r.byte();
+        if (version & 0x7f > 1) return error.Unsupported;
+        self.indirect = version & 0x80 == 0;
+        if (physical) |locations| {
+            if (self.indirect and locations.count() != 0) return error.InvalidData;
+        }
+        const n: usize = try r.uint(2);
+        if (n > limits.max_components) return error.LimitExceeded;
+        const offsets = try allocator.alloc(u32, n);
+        defer allocator.free(offsets);
+        const sizes = try allocator.alloc(u32, n);
+        defer allocator.free(sizes);
+        for (offsets, sizes) |*offset, *size| {
+            offset.* = if (self.indirect) 0 else try r.uint(4);
+            size.* = if (!self.indirect and version & 0x7f == 0) try r.uint(3) else 0;
+        }
+        self.names = try bzz.decode(allocator, r.bytes[r.pos..], limits.max_bzz_bytes);
+        r = .{ .bytes = self.names };
+        if (version & 0x7f != 0) {
+            for (sizes) |*size| size.* = try r.uint(3);
+        }
+        const flags = try r.take(n);
+        for (offsets, sizes, flags) |offset, size, flag| {
+            const id = try r.string();
+            const name = if (flag & 0x80 != 0) try r.string() else id;
+            const title = if (flag & 0x40 != 0) try r.string() else id;
+            if (id.len == 0) return error.InvalidData;
+            const entry = try self.id_index.getOrPut(allocator, id);
+            if (entry.found_existing) return error.InvalidData;
+            entry.value_ptr.* = self.components.items.len;
+            const form: ?iff.Chunk = if (self.indirect or physical == null)
+                null
+            else
+                physical.?.get(offset) orelse return error.InvalidData;
+            const kind = std.enums.fromInt(Component.Kind, flag & 0x3f) orelse return error.Unsupported;
+            if (form) |f| {
+                if (size != 0 and size != f.data.len + 8) return error.InvalidData;
+                if (!iff.tag(try f.formType(), kind.formType())) return error.InvalidData;
+            }
+            if (kind == .page) try self.pages.append(allocator, self.components.items.len);
+            try self.components.append(allocator, .{
+                .id = id,
+                .name = name,
+                .title = title,
+                .kind = kind,
+                .size = size,
+                .form = form,
+                .range = if (self.indirect or form != null) null else .{ .offset = offset, .length = size },
+            });
+        }
+        if (r.pos != r.bytes.len) return error.InvalidData;
+        return self;
+    }
+};
+
+/// Opens an immutable file through exact byte-range requests. Keeps DIRM/NAVM;
+/// indexed FORM headers are checked when components are supplied to Document.
+/// Zero DIRM sizes require header reads; gaps are scanned for late metadata.
 /// Single-page files are read whole. Always deinit, including after finish/error.
 pub const DocumentSource = struct {
+    const Location = struct { kind: [4]u8, length: u32 };
+
     allocator: std.mem.Allocator,
     limits: types.Limits,
     size: u32,
-    stage: enum { header, chunk, kind, metadata, whole, done, failed, taken } = .header,
+    stage: enum { header, chunk, metadata, whole, done, failed, taken } = .header,
     request: ByteRange,
     index: std.ArrayList(u8) = .empty,
-    physical: Locations = .empty,
+    directory: ?Directory = null,
+    locations: std.AutoHashMapUnmanaged(u32, Location) = .empty,
     bundled_container: bool = false,
     root_end: u32 = 0,
     cursor: u32 = 16,
     chunk_end: u32 = 0,
-    header: [8]u8 = undefined,
     chunks: usize = 0,
+    forms: usize = 0,
+    visited: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator, size: u32, limits: types.Limits) Error!DocumentSource {
         if (size < 12) return error.InvalidData;
@@ -47,8 +126,9 @@ pub const DocumentSource = struct {
     }
 
     pub fn deinit(self: *DocumentSource) void {
+        if (self.directory) |*directory| directory.deinit(self.allocator);
         self.index.deinit(self.allocator);
-        self.physical.deinit(self.allocator);
+        self.locations.deinit(self.allocator);
         self.* = undefined;
     }
 
@@ -100,37 +180,35 @@ pub const DocumentSource = struct {
                 self.stage = .done;
             },
             .chunk => {
-                self.header = bytes[0..8].*;
-                const length = std.mem.readInt(u32, self.header[4..8], .big);
+                const length = std.mem.readInt(u32, bytes[4..8], .big);
                 const end = @as(u64, self.cursor) + 8 + length;
                 if (end > self.root_end) return error.InvalidData;
                 self.chunk_end = @intCast(end + @intFromBool(length & 1 != 0 and end < self.root_end));
-                self.chunks += 1;
-                if (self.chunks > self.limits.max_chunks) return error.LimitExceeded;
-                if (self.chunks == 1 and !iff.tag(bytes[0..4], "DIRM")) return error.InvalidData;
-                if (iff.tag(bytes[0..4], "FORM")) {
-                    if (self.physical.count() >= self.limits.max_components) return error.LimitExceeded;
-                    if (length < 4) {
-                        // An unused short FORM need not invalidate the directory.
-                        // A referenced one cannot match any supported component kind.
-                        try self.recordForm(.{0} ** 4);
-                    } else {
-                        self.stage = .kind;
-                        self.request = .{ .offset = self.cursor + 8, .length = 4 };
-                    }
+                if (self.chunks == 0 and !iff.tag(bytes[0..4], "DIRM")) return error.InvalidData;
+                try self.countChunk(iff.tag(bytes[0..4], "FORM"));
+                if (self.locations.getPtr(self.cursor)) |location| {
+                    // Only zero-sized entries reach this path. Read their size
+                    // once; FORM type validation still belongs to component supply.
+                    if (!iff.tag(bytes[0..4], "FORM") or length < 4) return error.InvalidData;
+                    location.length = length + 8;
+                    self.visited += 1;
+                    try self.advance();
                 } else if (self.chunks == 1 or iff.tag(bytes[0..4], "NAVM")) {
                     try self.append(bytes);
                     const retained_end = @as(u64, self.index.items.len) + length + (length & 1);
                     if (retained_end > self.limits.max_input_bytes) return error.LimitExceeded;
                     self.stage = .metadata;
                     self.request = .{ .offset = self.cursor + 8, .length = length };
-                    if (length == 0) try self.advance();
+                    if (length == 0) {
+                        if (self.chunks == 1) return error.InvalidData;
+                        try self.advance();
+                    }
                 } else try self.advance();
             },
-            .kind => try self.recordForm(bytes[0..4].*),
             .metadata => {
                 try self.append(bytes);
                 if (bytes.len & 1 != 0) try self.append(&.{0});
+                if (self.chunks == 1) try self.readDirectory(bytes);
                 try self.advance();
             },
             else => unreachable,
@@ -142,10 +220,42 @@ pub const DocumentSource = struct {
         try self.index.appendSlice(self.allocator, bytes);
     }
 
-    fn recordForm(self: *DocumentSource, kind: [4]u8) Error!void {
-        const length = std.mem.readInt(u32, self.header[4..8], .big);
-        try self.physical.put(self.allocator, self.cursor, .{ .kind = kind, .length = length + 8 });
-        try self.advance();
+    fn readDirectory(self: *DocumentSource, bytes: []const u8) Error!void {
+        self.directory = try Directory.parse(self.allocator, bytes, self.limits, null);
+        for (self.directory.?.components.items) |component| {
+            const range = component.range orelse continue;
+            // Check in wide arithmetic before any skip or host request. A zero
+            // size still needs room for a FORM header and its four-byte type.
+            if (range.offset < self.chunk_end or range.offset & 1 != 0 or
+                (range.length != 0 and range.length < 12) or
+                @as(u64, range.offset) + @max(range.length, 12) > self.root_end)
+            {
+                return error.InvalidData;
+            }
+            const entry = try self.locations.getOrPut(self.allocator, range.offset);
+            const kind = component.kind.formType();
+            if (entry.found_existing) {
+                // Distinct IDs may alias one physical FORM, but their known
+                // sizes and expected FORM types must agree.
+                const location = entry.value_ptr;
+                if (!iff.tag(&location.kind, kind) or
+                    (location.length != 0 and range.length != 0 and location.length != range.length))
+                {
+                    return error.InvalidData;
+                }
+                location.length = @max(location.length, range.length);
+            } else entry.value_ptr.* = .{ .kind = kind.*, .length = range.length };
+        }
+    }
+
+    fn countChunk(self: *DocumentSource, form: bool) Error!void {
+        self.chunks += 1;
+        if (self.chunks > self.limits.max_chunks) return error.LimitExceeded;
+        if (form) {
+            if (self.directory.?.indirect) return error.InvalidData;
+            self.forms += 1;
+            if (self.forms > self.limits.max_components) return error.LimitExceeded;
+        }
     }
 
     fn advance(self: *DocumentSource) Error!void {
@@ -154,8 +264,22 @@ pub const DocumentSource = struct {
     }
 
     fn nextChunk(self: *DocumentSource) Error!void {
+        // Walk top-level boundaries using DIRM sizes. Only unindexed gaps and
+        // zero-sized entries need IO. Visiting every unique directory offset
+        // proves that no entry overlaps another component, metadata or padding.
+        while (self.cursor < self.root_end) {
+            const location = self.locations.get(self.cursor) orelse break;
+            if (location.length == 0) break;
+            try self.countChunk(true);
+            self.visited += 1;
+            self.cursor += location.length;
+            if (location.length & 1 != 0 and self.cursor < self.root_end) self.cursor += 1;
+        }
         if (self.cursor == self.root_end) {
-            if (self.chunks == 0) return error.InvalidData;
+            if (self.chunks == 0 or self.visited != self.locations.count()) return error.InvalidData;
+            for (self.directory.?.components.items) |*component| {
+                if (component.range) |*range| range.length = self.locations.get(range.offset).?.length;
+            }
             self.stage = .done;
             std.mem.writeInt(u32, self.index.items[8..12], @intCast(self.index.items.len - 12), .big);
         } else {
@@ -177,13 +301,11 @@ pub const DocumentSource = struct {
             .bytes = bytes,
             .container = try iff.root(bytes),
         } else try Document.open(self.allocator, bytes, self.limits);
-        errdefer doc.deinit();
         if (self.bundled_container) {
-            var iter = try doc.container.children();
-            try doc.readDirectory((try iter.next()) orelse return error.InvalidData, &self.physical);
+            doc.adoptDirectory(self.directory.?);
+            self.directory = null;
         }
-        // Commit ownership last: until then, the byte errdefer and doc.deinit
-        // release disjoint allocations even if directory parsing fails.
+        // The retained index and parsed directory now have one owner.
         doc.owned_input = bytes;
         return doc;
     }
@@ -271,7 +393,7 @@ pub const Document = struct {
         var iter = try root.children();
         const dir = (try iter.next()) orelse return error.InvalidData;
         if (!iff.tag(dir.id, "DIRM")) return error.InvalidData;
-        var physical: Locations = .empty;
+        var physical: Forms = .empty;
         defer physical.deinit(self.allocator);
         var count: usize = 1;
         while (try iter.next()) |chunk| {
@@ -280,69 +402,18 @@ pub const Document = struct {
             if (iff.tag(chunk.id, "FORM")) {
                 if (physical.count() >= self.limits.max_components) return error.LimitExceeded;
                 const offset = std.math.cast(u32, chunk.offset) orelse return error.LimitExceeded;
-                try physical.put(self.allocator, offset, .{
-                    .kind = if (chunk.data.len >= 4) chunk.data[0..4].* else .{0} ** 4,
-                    .length = @intCast(chunk.data.len + 8),
-                    .form = chunk,
-                });
+                try physical.put(self.allocator, offset, chunk);
             }
         }
-        try self.readDirectory(dir, &physical);
+        self.adoptDirectory(try Directory.parse(self.allocator, dir.data, self.limits, &physical));
     }
 
-    fn readDirectory(self: *Document, dir: iff.Chunk, physical: *const Locations) Error!void {
-        var r: iff.Reader = .{ .bytes = dir.data };
-        const version = try r.byte();
-        if (version & 0x7f > 1) return error.Unsupported;
-        self.indirect = version & 0x80 == 0;
-        if (self.indirect and physical.count() != 0) return error.InvalidData;
-        const n: usize = try r.uint(2);
-        if (n > self.limits.max_components) return error.LimitExceeded;
-        const offsets = try self.allocator.alloc(u32, n);
-        defer self.allocator.free(offsets);
-        const sizes = try self.allocator.alloc(u32, n);
-        defer self.allocator.free(sizes);
-        for (offsets, sizes) |*offset, *size| {
-            offset.* = if (self.indirect) 0 else try r.uint(4);
-            size.* = if (!self.indirect and version & 0x7f == 0) try r.uint(3) else 0;
-        }
-        self.names = try bzz.decode(self.allocator, r.bytes[r.pos..], self.limits.max_bzz_bytes);
-        r = .{ .bytes = self.names };
-        if (version & 0x7f != 0) {
-            for (sizes) |*size| size.* = try r.uint(3);
-        }
-        const flags = try r.take(n);
-        for (offsets, sizes, flags) |offset, size, flag| {
-            const id = try r.string();
-            const name = if (flag & 0x80 != 0) try r.string() else id;
-            const title = if (flag & 0x40 != 0) try r.string() else id;
-            if (id.len == 0) return error.InvalidData;
-            const entry = try self.id_index.getOrPut(self.allocator, id);
-            if (entry.found_existing) return error.InvalidData;
-            entry.value_ptr.* = self.components.items.len;
-            const location: ?Location = if (self.indirect)
-                null
-            else
-                physical.get(offset) orelse return error.InvalidData;
-            const kind = std.enums.fromInt(Component.Kind, flag & 0x3f) orelse return error.Unsupported;
-            var range: ?ByteRange = null;
-            if (location) |f| {
-                if (size != 0 and size != f.length) return error.InvalidData;
-                if (!iff.tag(&f.kind, kind.formType())) return error.InvalidData;
-                if (f.form == null) range = .{ .offset = offset, .length = f.length };
-            }
-            if (kind == .page) try self.pages.append(self.allocator, self.components.items.len);
-            try self.components.append(self.allocator, .{
-                .id = id,
-                .name = name,
-                .title = title,
-                .kind = kind,
-                .size = size,
-                .form = if (location) |f| f.form else null,
-                .range = range,
-            });
-        }
-        if (r.pos != r.bytes.len) return error.InvalidData;
+    fn adoptDirectory(self: *Document, parsed: Directory) void {
+        self.components = parsed.components;
+        self.pages = parsed.pages;
+        self.names = parsed.names;
+        self.id_index = parsed.id_index;
+        self.indirect = parsed.indirect;
     }
 
     /// A standalone page has no DIRM: retain its INCL IDs as host-resolved names.

@@ -12,12 +12,12 @@ function openFull(bytes) {
   assert(ptr); new Uint8Array(core.memory.buffer, ptr, bytes.length).set(bytes);
   assert.equal(core.open(), 0);
 }
-function openSource(size, read, limit = 64 << 20) {
+function openSource(size, read, limit = 64 << 20, expectedStatus = 0) {
   assert.equal(core.source_start(size, limit), 0);
   for (let i = 0; i < 100000; i++) {
     const ptr = core.source_range();
     assert.equal(core.last_status(), 0);
-    if (!ptr) return;
+    if (!ptr) { assert.equal(expectedStatus, 0, 'Expected source opening to fail'); return; }
     const view = new DataView(core.memory.buffer, ptr, 8);
     const offset = view.getUint32(0, true), length = view.getUint32(4, true);
     const bytes = read(offset, length);
@@ -25,7 +25,8 @@ function openSource(size, read, limit = 64 << 20) {
     const target = core.source_alloc();
     assert(target, `allocation status ${core.last_status()}`);
     new Uint8Array(core.memory.buffer, target, length).set(bytes);
-    assert.equal(core.source_commit(), 0, `commit at ${offset}+${length}`);
+    const status = core.source_commit();
+    if (status) { assert.equal(status, expectedStatus, `commit at ${offset}+${length}`); return; }
   }
   throw new Error('Source work limit');
 }
@@ -80,8 +81,9 @@ function verify(bytes, label, thumbnailsOnly = false) {
   const reads = [];
   openSource(bytes.length, (offset, length) => { reads.push({ offset, length }); return bytes.subarray(offset, offset + length); });
   const components = Array.from({ length: core.component_count() }, (_, i) => componentInfo(core, i));
-  for (const { range } of components) if (range) {
-    assert(!reads.some(r => r.offset < range.offset + range.length && r.offset + r.length > range.offset + 12), `${label}: opening read page content`);
+  for (const { range, size } of components) if (range) {
+    const allowedEnd = range.offset + (size === 0 ? 12 : 0);
+    assert(!reads.some(r => r.offset < range.offset + range.length && r.offset + r.length > allowedEnd), `${label}: opening read an indexed component`);
   }
   assert.deepEqual(snapshot(bytes, thumbnailsOnly), expected, label);
   core.close(); assert.equal(core.live_bytes(), 0);
@@ -91,14 +93,15 @@ for (const name of ['shared.djvu', 'reordered.djvu', 'shared-layers.djvu', 'anno
 verify(fixture('thumbnails-inline.djvu'), 'inline thumbnail without loading its missing includes', true);
 
 // Reuse our tiny compressed directory strings, assembling fresh containers in memory.
-function bundle(version, alias = false) {
+function bundle(version, alias = false, zeroSizes = version === 1) {
   const base = fixture('shared-layers.djvu');
   const n = base.readUInt16BE(25);
   const forms = Array.from({ length: n }, (_, i) => {
     const offset = base.readUInt32BE(27 + i * 4);
     return base.subarray(offset, offset + 8 + base.readUInt32BE(offset + 4));
   });
-  const index = fixture(version === 0 ? 'indirect-v0/index.djvu' : 'indirect-zero-sizes/index.djvu');
+  const index = fixture(version === 0 ? 'indirect-v0/index.djvu'
+    : zeroSizes ? 'indirect-zero-sizes/index.djvu' : 'indirect-layers/index.djvu');
   const compressed = index.subarray(27, 24 + index.readUInt32BE(20));
   const dirm = Buffer.alloc(3 + n * (version === 0 ? 7 : 4) + compressed.length);
   dirm[0] = 0x80 | version; dirm.writeUInt16BE(n, 1); compressed.copy(dirm, dirm.length - compressed.length);
@@ -106,13 +109,13 @@ function bundle(version, alias = false) {
   const pieces = [];
   for (let i = n - 1; i >= 0; i--) {
     dirm.writeUInt32BE(cursor, 3 + i * (version === 0 ? 7 : 4));
-    if (version === 0) dirm.writeUIntBE(forms[i].length, 7 + i * 7, 3);
+    if (version === 0) dirm.writeUIntBE(zeroSizes ? 0 : forms[i].length, 7 + i * 7, 3);
     pieces.push(forms[i]); cursor += forms[i].length;
     if (forms[i].length & 1) { pieces.push(Buffer.alloc(1)); cursor++; }
   }
   if (alias) {
     dirm.writeUInt32BE(dirm.readUInt32BE(3), 3 + (n - 1) * (version === 0 ? 7 : 4));
-    if (version === 0) dirm.writeUIntBE(forms[0].length, 7 + (n - 1) * 7, 3);
+    if (version === 0) dirm.writeUIntBE(zeroSizes ? 0 : forms[0].length, 7 + (n - 1) * 7, 3);
   }
   const header = Buffer.from('AT&TFORM0000DJVMDIRM0000');
   header.writeUInt32BE(dirm.length, 20);
@@ -121,7 +124,54 @@ function bundle(version, alias = false) {
   result.writeUInt32BE(result.length - 12, 8);
   return result;
 }
-for (const version of [0, 1]) for (const alias of [false, true]) verify(bundle(version, alias), `DIRM v${version}, zero sizes=${version === 1}, alias=${alias}`);
+for (const version of [0, 1]) for (const zero of [false, true]) for (const alias of [false, true])
+  verify(bundle(version, alias, zero), `DIRM v${version}, zero sizes=${zero}, alias=${alias}`);
+
+const mixedAlias = bundle(0, true);
+mixedAlias.writeUIntBE(0, 31, 3); // One alias has no size; its peer supplies the extent.
+verify(mixedAlias, 'mixed known and zero sizes for aliases');
+
+function rejectSource(bytes) {
+  openSource(bytes.length, (offset, length) => bytes.subarray(offset, offset + length), 64 << 20, 2);
+  core.close(); assert.equal(core.live_bytes(), 0);
+}
+for (const zero of [false, true]) {
+  const good = bundle(0, false, zero), n = good.readUInt16BE(25);
+  const first = good.readUInt32BE(27), lastEntry = 27 + (n - 1) * 7;
+  for (const offset of [0, 16, 24, first + 1, first + 12, good.length - 2, 0xfffffffe]) {
+    const bad = Buffer.from(good); bad.writeUInt32BE(offset, lastEntry);
+    rejectSource(bad);
+  }
+  for (const size of [1, 11, good.length, 0xffffff]) {
+    const bad = Buffer.from(good); bad.writeUIntBE(size, 31, 3);
+    rejectSource(bad);
+  }
+  const wrongKind = Buffer.from(good);
+  wrongKind.writeUInt32BE(good.readUInt32BE(34), 27); // Page aliases a shared FORM.
+  rejectSource(wrongKind);
+}
+const conflictingAlias = bundle(0, true);
+conflictingAlias.writeUIntBE(conflictingAlias.readUIntBE(31, 3) + 2, 31, 3);
+rejectSource(conflictingAlias);
+
+// ABI ownership and recovery after deferred rejection; native tests vary headers.
+{
+  const good = fixture('shared.djvu'), bad = Buffer.from(good);
+  bad.write('JUNK', bad.readUInt32BE(35)); // Second page's FORM tag.
+  openSource(bad.length, (offset, length) => bad.subarray(offset, offset + length));
+  prepare(bad, 0);
+  assert.equal(core.render_start_sized(0, 37, 53, 0, 0, 0, 0, 0), 0); finish();
+  core.render_cancel();
+  const index = core.next_missing(1, 0) - 1;
+  const { range } = componentInfo(core, index);
+  const retained = core.cache_bytes();
+  assert.equal(supply(core, index, bad.subarray(range.offset, range.offset + range.length)), 2);
+  assert.equal(core.cache_bytes(), retained);
+  assert.equal(componentInfo(core, index).loaded, false);
+  assert.equal(supply(core, index, good.subarray(range.offset, range.offset + range.length)), 0);
+  assert.equal(core.render_start_sized(1, 37, 53, 0, 0, 0, 0, 0), 0); finish();
+  core.close(); assert.equal(core.live_bytes(), 0);
+}
 
 const unused = Buffer.concat([fixture('shared.djvu'), Buffer.from('FORM\0\0\0\0')]);
 unused.writeUInt32BE(unused.length - 12, 8);
@@ -156,4 +206,4 @@ assert.equal(core.source_commit(), 2);
 core.close(); assert.equal(core.live_bytes(), 0);
 openSource(original.length, (offset, length) => original.subarray(offset, offset + length));
 core.close(); assert.equal(core.live_bytes(), 0);
-console.log(`Range input: pixels and metadata, DIRM v0/v1, aliases, odd chunks, eviction; 4 GiB source opened with ${readBytes} bytes read.`);
+console.log(`Range input: index-only opening, DIRM v0/v1, zero sizes, aliases, deferred validation, metadata and eviction; 4 GiB source reads ${readBytes} bytes.`);

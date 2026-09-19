@@ -92,8 +92,12 @@ run concurrently, and `signal` allows the host to cancel IO. An HTTP host can
 implement this with `Range: bytes=offset-end`, checking the 206 response and
 `Content-Range`; authentication, version consistency and caching belong to the host.
 
-Bundled documents load pages on demand; evicted components are read again when
-needed. Single-page DjVu, IW44 and THUM inputs are read whole. An indirect index
+Bundled documents open from DIRM and optional NAVM, using directory sizes to skip
+components.
+Component headers are checked when loaded; zero directory sizes require header
+reads during opening. Gaps are scanned for metadata, including late NAVM.
+Pages load on demand; evicted components are read again when needed.
+Single-page DjVu, IW44 and THUM inputs are read whole. An indirect index
 can use a range source too; its external files still use `loadComponent`.
 The source may be up to `0xffffffff` bytes; the memory budget counts retained
 bytes, not the file's size.

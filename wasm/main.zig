@@ -117,7 +117,7 @@ export fn open() u32 {
     return 0;
 }
 
-/// Start opening an immutable file without retaining all its bytes.
+/// Start range opening; bundled component headers are checked on supply.
 export fn source_start(size: u32, limit: u32) u32 {
     close();
     budget = .{ .parent = heap.allocator, .limit = @min(limit, heap.max_memory) };
