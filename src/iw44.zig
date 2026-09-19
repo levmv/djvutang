@@ -279,6 +279,7 @@ pub const Decoder = struct {
     block: usize = 0,
     zp: ?Zp = null,
     scratch: []i16 = &.{},
+    zero_plane: bool = false,
     image: ?Pixmap = null,
     position: usize = 0,
     scale: u32 = 16,
@@ -422,7 +423,16 @@ pub const Decoder = struct {
         self.stride = (self.area.width + mask) & ~mask;
         self.position = 0;
         self.channel = 0;
-        self.phase = .scatter;
+        self.beginPlane();
+    }
+
+    fn beginPlane(self: *Decoder) void {
+        const plane = &self.planes[self.channel];
+        // Without any coefficient buckets the whole plane is zero, at every
+        // reduction and region. Fill samples directly; no lifting is needed.
+        self.zero_plane = plane.coefficients.values.items.len == 0;
+        if (self.zero_plane and !self.retain_coefficients) plane.coefficients.deinit(self.allocator);
+        self.phase = if (self.zero_plane) .extract else .scatter;
     }
 
     fn entropy(self: *Decoder) Error!void {
@@ -642,16 +652,20 @@ pub const Decoder = struct {
         const x = self.position % region.width;
         const y = self.position / region.width;
         const count = @min(work, region.width - x);
-        const half = self.channel != 0 and self.header.half_chroma and self.reduction == 1;
-        const bottom = self.image.?.height - region.y - 1 - y;
-        const sy = (if (half) bottom & ~@as(usize, 1) else bottom) - self.area.y;
-        const samples = self.scratch[sy * self.stride ..][0..self.area.width];
         const pixels = self.image.?.pixels[self.position..][0..count];
-        for (pixels, region.x + x..) |*pixel, px| {
-            const sx = (if (half) px & ~@as(usize, 1) else px) - self.area.x;
-            const sample_value: i32 = (@as(i32, samples[sx]) + 32) >> 6;
-            const reduced: i8 = @intCast(std.math.clamp(sample_value, -128, 127));
-            pixel[self.channel] = @bitCast(reduced);
+        if (self.zero_plane) {
+            for (pixels) |*pixel| pixel[self.channel] = 0;
+        } else {
+            const half = self.channel != 0 and self.header.half_chroma and self.reduction == 1;
+            const bottom = self.image.?.height - region.y - 1 - y;
+            const sy = (if (half) bottom & ~@as(usize, 1) else bottom) - self.area.y;
+            const samples = self.scratch[sy * self.stride ..][0..self.area.width];
+            for (pixels, region.x + x..) |*pixel, px| {
+                const sx = (if (half) px & ~@as(usize, 1) else px) - self.area.x;
+                const sample_value: i32 = (@as(i32, samples[sx]) + 32) >> 6;
+                const reduced: i8 = @intCast(std.math.clamp(sample_value, -128, 127));
+                pixel[self.channel] = @bitCast(reduced);
+            }
         }
         self.position += count;
         if (self.position == @as(usize, region.width) * region.height) {
@@ -661,7 +675,7 @@ pub const Decoder = struct {
             }
             self.position = 0;
             self.channel += 1;
-            self.phase = if (self.channel < self.planeCount()) .scatter else .color;
+            if (self.channel < self.planeCount()) self.beginPlane() else self.phase = .color;
         }
         return count;
     }

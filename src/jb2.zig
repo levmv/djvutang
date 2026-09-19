@@ -56,13 +56,40 @@ pub const Shape = struct {
     }
 };
 
-const Row = struct { pixels: []u8, width: u32 };
+const Row = struct {
+    pixels: []u8,
+    width: u32,
+
+    /// Read 1..64 pixels starting at x, least-significant bit first.
+    /// Pixels outside the symbol, including byte padding, read as white.
+    pub fn window(row: Row, x: i32, length: usize) u64 {
+        if (row.width == 0 or x >= row.width or @as(i64, x) + @as(i64, @intCast(length)) <= 0) return 0;
+        const leading: u6 = @intCast(@max(0, -x));
+        const first: u32 = @intCast(@max(0, x));
+        const count = @min(length - leading, row.width - first);
+        const byte = first / 8;
+        const shift: u6 = @intCast(first % 8);
+        var value: u64 = 0;
+        if (row.pixels.len - byte >= 8) {
+            value = std.mem.readInt(u64, row.pixels[byte..][0..8], .little) >> shift;
+            // An unaligned window can extend into a ninth byte.
+            if (count > 64 - @as(usize, shift)) {
+                value |= @as(u64, row.pixels[byte + 8]) << @as(u6, @intCast(64 - @as(u32, shift)));
+            }
+        } else {
+            for (row.pixels[byte..], 0..) |b, i| value |= @as(u64, b) << @as(u6, @intCast(i * 8));
+            value >>= shift;
+        }
+        return (value & (@as(u64, std.math.maxInt(u64)) >> @as(u6, @intCast(64 - count)))) << leading;
+    }
+};
 
 inline fn rowPixel(row: Row, x: i32) u1 {
     if (x < 0 or x >= row.width) return 0;
     const ux: u32 = @intCast(x);
     return @truncate(row.pixels[ux / 8] >> @intCast(ux % 8));
 }
+
 pub const Blit = struct { shape: u32, left: i64, bottom: i64 };
 pub const Image = struct {
     width: u32 = 0,
@@ -368,6 +395,8 @@ pub const Decoder = struct {
         const row = shape.row(y);
         const above = shape.row(y + 1);
         var ctx: usize = 0;
+        // Window bits come from unchanged neighbouring/reference rows. Retain
+        // the rolling context across windows to avoid repeating its setup.
         if (p.reference) |reference| {
             const ref = self.image.shape(reference);
             var cx = x + p.offset_x;
@@ -390,19 +419,32 @@ pub const Decoder = struct {
                 rowPixel(ref_below, cx + 1),
             };
             for (bits) |b| ctx = (ctx << 1) | b;
-            for (0..count) |_| {
-                const bit = try self.zp.bit(&self.refinement[ctx]);
-                if (bit != 0) {
-                    row.pixels[@as(u32, @intCast(x)) / 8] |= @as(u8, 1) << @intCast(@as(u32, @intCast(x)) % 8);
-                    shape.box.include(x, y);
+            var done: usize = 0;
+            while (done < count) {
+                const n = @min(64, count - done);
+                var next_above = above.window(x + 2, n);
+                var next_ref_above = ref_above.window(cx + 1, n);
+                var next_ref_row = ref_row.window(cx + 2, n);
+                var next_ref_below = ref_below.window(cx + 2, n);
+                for (0..n) |_| {
+                    const bit = try self.zp.bit(&self.refinement[ctx]);
+                    if (bit != 0) {
+                        row.pixels[@as(u32, @intCast(x)) / 8] |= @as(u8, 1) << @intCast(@as(u32, @intCast(x)) % 8);
+                        shape.box.include(x, y);
+                    }
+                    // Keep six overlapping neighbours; add four incoming bits
+                    // and the decoded pixel.
+                    ctx = ((ctx << 1) & 0x636) | (@as(usize, @intCast(next_above & 1)) << 8) |
+                        (@as(usize, bit) << 7) | (@as(usize, @intCast(next_ref_above & 1)) << 6) |
+                        (@as(usize, @intCast(next_ref_row & 1)) << 3) | @as(usize, @intCast(next_ref_below & 1));
+                    next_above >>= 1;
+                    next_ref_above >>= 1;
+                    next_ref_row >>= 1;
+                    next_ref_below >>= 1;
+                    x += 1;
                 }
-                // Retain the overlapping neighbours, then add the four that
-                // enter from the right and the pixel just decoded.
-                ctx = ((ctx << 1) & 0x636) | (@as(usize, rowPixel(above, x + 2)) << 8) |
-                    (@as(usize, bit) << 7) | (@as(usize, rowPixel(ref_above, cx + 1)) << 6) |
-                    (@as(usize, rowPixel(ref_row, cx + 2)) << 3) | rowPixel(ref_below, cx + 2);
-                x += 1;
-                cx += 1;
+                cx += @intCast(n);
+                done += n;
             }
         } else {
             const above2 = shape.row(y + 2);
@@ -421,17 +463,26 @@ pub const Decoder = struct {
                 rowPixel(row, x - 1),
             };
             for (bits) |b| ctx = (ctx << 1) | b;
-            for (0..count) |_| {
-                const bit = try self.zp.bit(&self.direct[ctx]);
-                if (bit != 0) {
-                    row.pixels[@as(u32, @intCast(x)) / 8] |= @as(u8, 1) << @intCast(@as(u32, @intCast(x)) % 8);
-                    shape.box.include(x, y);
+            var done: usize = 0;
+            while (done < count) {
+                const n = @min(64, count - done);
+                var next_above2 = above2.window(x + 2, n);
+                var next_above = above.window(x + 3, n);
+                for (0..n) |_| {
+                    const bit = try self.zp.bit(&self.direct[ctx]);
+                    if (bit != 0) {
+                        row.pixels[@as(u32, @intCast(x)) / 8] |= @as(u8, 1) << @intCast(@as(u32, @intCast(x)) % 8);
+                        shape.box.include(x, y);
+                    }
+                    // Keep seven overlapping neighbours; add two incoming bits
+                    // and the decoded pixel.
+                    ctx = ((ctx << 1) & 0x37a) | (@as(usize, @intCast(next_above2 & 1)) << 7) |
+                        (@as(usize, @intCast(next_above & 1)) << 2) | bit;
+                    next_above2 >>= 1;
+                    next_above >>= 1;
+                    x += 1;
                 }
-                // Three bits two rows above, five above, two to the left.
-                // Shifting preserves seven neighbours; only two new reads.
-                ctx = ((ctx << 1) & 0x37a) | (@as(usize, rowPixel(above2, x + 2)) << 7) |
-                    (@as(usize, rowPixel(above, x + 3)) << 2) | bit;
-                x += 1;
+                done += n;
             }
         }
         p.pixel += count;

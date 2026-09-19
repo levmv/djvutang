@@ -76,10 +76,15 @@ test "IW44 grayscale color progressive chroma and tiny boundaries match independ
 test "IW44 reconstruction shares one work budget across rows and phase boundaries" {
     // One grayscale plane: filtering, extraction and RGB conversion each charge
     // one unit per operation. A batched call must do no more than scalar calls.
-    const chunk = [_]u8{ 0, 0, 0x81, 2, 0, 37, 0, 29, 0x80 };
+    var iter = try (try iff.root(@embedFile("../fixtures/gray.djvu"))).children();
+    const chunk = while (try iter.next()) |child| {
+        if (iff.tag(child.id, "BG44")) break child.data;
+    } else return error.MissingFixtureChunk;
+    const expected = @embedFile("../fixtures/gray-expected.ppm");
+    const header = std.mem.indexOf(u8, expected, "\n255\n").? + 5;
     var work: usize = 0;
     for ([_]bool{ false, true }) |batched| {
-        var decoder = try iw44.Decoder.init(std.testing.allocator, &.{&chunk}, .{});
+        var decoder = try iw44.Decoder.init(std.testing.allocator, &.{chunk}, .{});
         defer decoder.deinit();
         while (decoder.phase != .filter) try std.testing.expect(!try decoder.step(1));
         if (batched) {
@@ -93,7 +98,7 @@ test "IW44 reconstruction shares one work budget across rows and phase boundarie
         }
         var image = decoder.takeImage();
         defer image.deinit(std.testing.allocator);
-        for (image.pixels) |pixel| try std.testing.expectEqual([3]u8{ 127, 127, 127 }, pixel);
+        try std.testing.expectEqualSlices(u8, expected[header..], std.mem.sliceAsBytes(image.pixels));
     }
 }
 
@@ -132,18 +137,26 @@ test "IW44 vertical batches preserve signed samples at edges and resume boundari
 
 test "IW44 zero coefficients render within a bounded memory budget" {
     // A complete color header with zero slices: all three planes reconstruct
-    // neutral gray. Odd height also exercises padded reconstruction storage.
+    // neutral gray, including the final row at an odd height.
     const chunk = [_]u8{ 0, 0, 1, 2, 1, 0, 1, 1, 0x80 };
-    var budget: Budget = .{ .parent = std.testing.allocator, .limit = 512 * 1024 };
-    {
+    // Enough for RGB and coefficient indexes, but not a scratch plane as well.
+    var budget: Budget = .{ .parent = std.testing.allocator, .limit = 256 * 1024 };
+    for ([_]bool{ false, true }) |retain| {
         var decoder = try iw44.Decoder.init(budget.allocator(), &.{&chunk}, .{});
         defer decoder.deinit();
+        decoder.retain_coefficients = retain;
         while (!try decoder.step(127)) {}
-        var image = decoder.takeImage();
-        defer image.deinit(budget.allocator());
-        try std.testing.expectEqual(@as(u32, 256), image.width);
-        try std.testing.expectEqual(@as(u32, 257), image.height);
-        for (image.pixels) |pixel| try std.testing.expectEqual([3]u8{ 128, 128, 128 }, pixel);
+        if (retain) {
+            // Repeat at another grid and region before returning to full size.
+            try decoder.reconstructReduced(4, .{ .x = 1, .y = 2, .width = 61, .height = 57 });
+            while (!try decoder.step(1)) {}
+            for (decoder.image.?.pixels) |pixel| try std.testing.expectEqual([3]u8{ 128, 128, 128 }, pixel);
+            try decoder.reconstruct(.{ .x = 0, .y = 0, .width = 256, .height = 257 });
+            while (!try decoder.step(127)) {}
+        }
+        try std.testing.expectEqual(@as(u32, 256), decoder.image.?.width);
+        try std.testing.expectEqual(@as(u32, 257), decoder.image.?.height);
+        for (decoder.image.?.pixels) |pixel| try std.testing.expectEqual([3]u8{ 128, 128, 128 }, pixel);
     }
     try std.testing.expectEqual(@as(usize, 0), budget.live);
 }

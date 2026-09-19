@@ -77,6 +77,25 @@ fn expectImage(expected: *const jb2.Image, actual: *const jb2.Image) !void {
     }
 }
 
+test "JB2 row windows match individual pixels across packed and symbol boundaries" {
+    var bytes: [17]u8 = undefined;
+    for (&bytes, 0..) |*byte, i| byte.* = 0xa7 ^ @as(u8, @truncate(i * 29));
+    for ([_]u32{ 1, 7, 8, 9, 63, 64, 65, 71, 72, 73, 129 }) |width| {
+        // Leave padding bits set to check that they cannot enter the context.
+        const shape: jb2.Shape = .{ .width = width, .height = 1, .pixels = bytes[0 .. (width + 7) / 8] };
+        var x: i32 = -65;
+        while (x < width + 2) : (x += 1) {
+            for ([_]usize{ 1, 7, 8, 31, 63, 64 }) |length| {
+                var expected: u64 = 0;
+                for (0..length) |i| expected |= @as(u64, shape.get(x + @as(i32, @intCast(i)), 0)) << @intCast(i);
+                try std.testing.expectEqual(expected, shape.row(0).window(x, length));
+            }
+        }
+        try std.testing.expectEqual(@as(u64, 0), shape.row(-1).window(0, 64));
+        try std.testing.expectEqual(@as(u64, 0), shape.row(1).window(-1, 64));
+    }
+}
+
 test "JB2 row contexts preserve direct refinement and inherited symbols at every budget" {
     var direct: usize = 0;
     var refinement: usize = 0;
@@ -97,7 +116,7 @@ test "JB2 row contexts preserve direct refinement and inherited symbols at every
                 // it never uses the shifted context for another pixel.
                 if (try reference.step(1) == .done) break;
             } else return error.TestWorkLimit;
-            for ([_]usize{ 2, 7, 31, 4096 }) |work| {
+            for ([_]usize{ 2, 7, 31, 63, 64, 65, 4096 }) |work| {
                 var doc = try Document.open(a, bytes, .{});
                 defer doc.deinit();
                 var actual = try Job.init(&doc, page, .{});
