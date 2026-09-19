@@ -8,7 +8,7 @@ var source: ?probe.Source = null;
 fn status(err: anyerror) u32 {
     return switch (err) {
         error.InvalidArgument, error.Busy => 2,
-        error.OutOfMemory => if (budget.denied) 4 else 5,
+        error.OutOfMemory => if (budget.denied != null) 4 else 5,
         error.LimitExceeded => 4,
         else => 3,
     };
@@ -30,20 +30,20 @@ export fn input_alloc(length: usize, limit: usize) usize {
 
 export fn open() u32 {
     if (source != null) return 2;
-    budget.denied = false;
+    budget.denied = null;
     source = probe.Source.init(budget.allocator(), input) catch |err| return status(err);
     return 0;
 }
 
 export fn step(work: usize) u32 {
     const s = if (source) |*s| s else return 2;
-    budget.denied = false;
+    budget.denied = null;
     return if (s.decoder.step(work) catch |err| return status(err)) 0 else 1;
 }
 
 export fn reconstruct(reduction: u32, x: u32, y: u32, width: u32, height: u32) u32 {
     const s = if (source) |*s| s else return 2;
-    budget.denied = false;
+    budget.denied = null;
     if (width == 0 and height == 0 and x == 0 and y == 0) {
         s.reconstruct(reduction) catch |err| return status(err);
     } else s.decoder.reconstructReduced(reduction, .{ .x = x, .y = y, .width = width, .height = height }) catch |err| return status(err);

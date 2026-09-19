@@ -9,7 +9,18 @@ pub const Budget = struct {
     limit: usize,
     live: usize = 0,
     peak: usize = 0,
-    denied: bool = false,
+    /// Rejected request, captured before error cleanup frees live allocations.
+    /// Cleared on the next allocation attempt. Also clear before a new
+    /// operation; only interpret it with OutOfMemory.
+    denied: ?Denial = null,
+
+    pub const Denial = struct {
+        limit: usize,
+        live: usize,
+        requested: usize,
+        /// Existing allocation being resized, or zero for a new allocation.
+        replacing: usize,
+    };
 
     pub fn allocator(self: *Budget) Allocator {
         return .{ .ptr = self, .vtable = &.{ .alloc = alloc, .resize = resize, .remap = remap, .free = free } };
@@ -20,8 +31,9 @@ pub const Budget = struct {
     }
 
     fn allow(self: *Budget, old: usize, new: usize) bool {
+        self.denied = null;
         if (new > self.limit - (self.live - old)) {
-            self.denied = true;
+            self.denied = .{ .limit = self.limit, .live = self.live, .requested = new, .replacing = old };
             return false;
         }
         return true;

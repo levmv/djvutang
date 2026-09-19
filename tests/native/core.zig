@@ -5,6 +5,35 @@ const Budget = @import("../../src/budget.zig").Budget;
 const iw44 = @import("../../src/iw44.zig");
 const iff = @import("../../src/iff.zig");
 
+test "budget rejection survives cleanup and differs from allocator exhaustion" {
+    var storage: [32]u8 = undefined;
+    var parent = std.heap.FixedBufferAllocator.init(&storage);
+    var budget: Budget = .{ .parent = parent.allocator(), .limit = 64 };
+    const a = budget.allocator();
+    {
+        const bytes = try a.alloc(u8, 32);
+        defer a.free(bytes);
+        try std.testing.expect(!a.resize(bytes, 96));
+    }
+    try std.testing.expectEqual(@as(usize, 0), budget.live);
+    try std.testing.expectEqualDeep(Budget.Denial{
+        .limit = 64,
+        .live = 32,
+        .requested = 96,
+        .replacing = 32,
+    }, budget.denied.?);
+    try std.testing.expectError(error.OutOfMemory, a.alloc(u8, 65));
+    try std.testing.expectEqualDeep(Budget.Denial{
+        .limit = 64,
+        .live = 0,
+        .requested = 65,
+        .replacing = 0,
+    }, budget.denied.?);
+    // The next request fits the budget but exceeds the parent allocator.
+    try std.testing.expectError(error.OutOfMemory, a.alloc(u8, 33));
+    try std.testing.expect(budget.denied == null);
+}
+
 fn wavelet(allocator: std.mem.Allocator, bytes: []const u8, work: usize) !@import("../../src/pixmap.zig").Pixmap {
     const root = try iff.root(bytes);
     var chunks: std.ArrayList([]const u8) = .empty;

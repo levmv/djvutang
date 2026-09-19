@@ -100,6 +100,9 @@ open(readFileSync(fixture('annotations-a.djvu')), 12 * 1024);
 const before = core.live_bytes();
 assert.equal(core.annotations_load(0), 4);
 assert.equal(core.live_bytes(), before);
+const message = new TextDecoder().decode(new Uint8Array(core.memory.buffer, core.error_message_ptr(), core.error_message_len()));
+assert.match(message, /^LimitExceeded in annotations_load: memory budget;/);
+assert(Number(message.match(/live (\d+)/)[1]) > before, 'diagnostic retains memory freed during cleanup');
 core.close(); assert.equal(core.live_bytes(), 0);
 
 if (oracle) {

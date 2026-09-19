@@ -127,6 +127,13 @@ limits also use `LimitExceeded`. A larger budget does not guarantee that a page
 fits within the module's 256 MiB linear memory maximum: allocation rounding and
 previous allocation sizes also matter.
 
+For core `LimitExceeded` errors, `message` names the operation (opening, render
+start/step/restart, or metadata). Memory budget refusals include the requested
+allocation size, the allocation it would replace (zero for a new allocation),
+live bytes and the budget at the moment of refusal, before cleanup. Other
+format/complexity limits may only identify the operation. Message text can change;
+use `code` for program logic.
+
 `open(source, { cacheLimit })` sets the idle cache target, from zero to
 `memoryLimit`. It defaults to one quarter of `memoryLimit` (16 MiB).
 Older components and dictionaries are evicted between independent operations;

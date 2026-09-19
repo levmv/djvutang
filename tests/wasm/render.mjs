@@ -16,12 +16,27 @@ const hash = data => createHash('sha256').update(data).digest('hex');
 const fixtures = JSON.parse(readFileSync(resolve(root, 'tests/fixtures/cases.json'), 'utf8'));
 const results = [];
 let cases = 0;
+function errorMessage() {
+  return new TextDecoder().decode(new Uint8Array(core.memory.buffer, core.error_message_ptr(), core.error_message_len()));
+}
+function memoryError(operation, limit) {
+  const message = errorMessage();
+  assert(message.startsWith(`LimitExceeded in ${operation}: memory budget;`), message);
+  const match = message.match(/requested (\d+) bytes, replacing (\d+), live (\d+), limit (\d+)/);
+  assert(match, message);
+  const [requested, replacing, live, maximum] = match.slice(1).map(Number);
+  assert.equal(maximum, limit);
+  assert(live >= replacing && live - replacing + requested > maximum, message);
+  assert(live >= core.live_bytes(), 'error cleanup may already have freed allocations');
+  return message;
+}
 function open(path, limit = 64 * 1024 * 1024) {
   const input = readFileSync(resolve(root, path));
   const ptr = core.input_alloc(input.length, limit);
   assert(ptr > 0);
   new Uint8Array(core.memory.buffer, ptr, input.length).set(input);
   assert.equal(core.open(), 0);
+  assert.equal(core.error_message_len(), 0);
 }
 function finish(work = 71) {
   let calls = 0;
@@ -154,9 +169,18 @@ for (const limit of [8192, 20000, 40000]) {
   let status = 1;
   for (let calls = 0; status === 1 && calls < 100000; calls++) status = core.render_step(512);
   assert.equal(status, 4, 'insufficient decode/reconstruction budget must fail');
+  const message = memoryError('render_step', limit);
   assert.equal(core.result_len(), 0);
+  assert.equal(core.text_load(0), 0); // Independent metadata resets the budget diagnostic.
+  assert.equal(core.render_step(512), 4);
+  assert.equal(errorMessage(), message);
+  assert.equal(core.render_restart(1, 0), 4);
+  assert.equal(errorMessage(), message);
   core.render_cancel();
+  assert.equal(errorMessage(), 'Cancelled');
   core.close();
+  assert.equal(core.error_message_ptr(), 0);
+  assert.equal(core.error_message_len(), 0);
   assert.equal(core.live_bytes(), 0);
 }
 // Coefficients, full RGB and output RGBA must fit together in this budget.
@@ -169,6 +193,11 @@ core.close();
 assert.equal(core.live_bytes(), 0);
 assert.equal(core.input_alloc(1024, 512), 0);
 assert.equal(core.last_status(), 4);
+assert.equal(memoryError('input_alloc', 512),
+  'LimitExceeded in input_alloc: memory budget; requested 1024 bytes, replacing 0, live 0, limit 512');
+assert.equal(core.input_alloc(128 * 1024 * 1024 + 1, 256 * 1024 * 1024), 0);
+assert.equal(core.last_status(), 4);
+assert.match(errorMessage(), /max_input_bytes; requested 134217729, available 134217728/);
 core.close();
 assert.equal(core.live_bytes(), 0);
 
@@ -178,6 +207,7 @@ for (const limit of [8192, 24000, 28000]) {
   let status = 1;
   for (let calls = 0; status === 1 && calls < 100000; calls++) status = core.render_step(512);
   assert.equal(status, 4, `JPEG memory budget ${limit}`);
+  memoryError('render_step', limit);
   assert.equal(core.result_len(), 0);
   core.close();
   assert.equal(core.live_bytes(), 0);

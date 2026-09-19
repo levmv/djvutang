@@ -51,7 +51,8 @@ export interface Diagnostics {
 export type DjvuErrorCode = 'InvalidData' | 'Unsupported' | 'LimitExceeded' | 'Cancelled'
   | 'OutOfMemory' | 'InvalidArgument' | 'Busy' | 'MissingComponent' | 'ComponentLoadFailed'
   | 'SourceReadFailed' | 'WasmLoadFailed' | 'WorkerFailed' | 'Destroyed';
-/** Operational failures use this class. Branch on code; message is for display/debugging. */
+/** Operational failures use this class. Branch on code; message is for display/debugging.
+ * Core memory budget errors include the operation and refused allocation, before cleanup. */
 export class DjvuError extends Error {
   readonly code: DjvuErrorCode;
   readonly cause?: unknown;

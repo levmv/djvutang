@@ -102,7 +102,7 @@ try {
           const sameAfterPageError = new Uint8Array(goodPage.rgba)
             .every((b, i) => b === new Uint8Array(beforePageError.rgba)[i]);
           const memoryError = await decoder.open(await bytes('/shared.djvu'), { memoryLimit: 128 })
-            .then(() => 'unexpected completion', e => e.code);
+            .then(() => 'unexpected completion', e => ({ code: e.code, message: e.message }));
           await decoder.open(await bytes('/plain.djvu'));
           const afterMemoryError = await decoder.render(0);
           const colorChecks = [];
@@ -245,7 +245,8 @@ try {
       assert.equal(result.damagedPage, 'InvalidData');
       assert.deepEqual(result.goodPageAfterError, [160, 100]);
       assert.equal(result.sameAfterPageError, true);
-      assert.equal(result.memoryError, 'LimitExceeded');
+      assert.equal(result.memoryError.code, 'LimitExceeded');
+      assert.match(result.memoryError.message, /LimitExceeded in input_alloc: memory budget; requested \d+ bytes, replacing 0, live 0, limit 128/);
       assert.deepEqual(result.afterMemoryError, [37, 29]);
       for (const color of result.colorChecks) {
         assert.equal(color.exact, true, color.name);

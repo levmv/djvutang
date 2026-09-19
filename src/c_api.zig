@@ -25,7 +25,7 @@ const Document = struct {
             error.Unsupported => .unsupported,
             error.LimitExceeded => .limit_exceeded,
             error.Cancelled => .cancelled,
-            error.OutOfMemory => if (self.budget.denied) .limit_exceeded else .out_of_memory,
+            error.OutOfMemory => if (self.budget.denied != null) .limit_exceeded else .out_of_memory,
             error.InvalidArgument => .invalid_argument,
             error.Busy => .busy,
             error.MissingComponent => .missing_component,
@@ -165,7 +165,7 @@ export fn djvutang_render_start(document: ?*Document, page: u32, options: ?*cons
     const doc = document orelse return .invalid_argument;
     const opts = Options.decode(options) catch |err| return doc.fail(err);
     if (doc.value.busy) return .busy;
-    doc.budget.denied = false;
+    doc.budget.denied = null;
     const job = doc.budget.allocator().create(Job) catch |err| return doc.fail(err);
     job.* = .{ .owner = doc, .value = djvu.RenderJob.init(&doc.value, page, opts) catch |err| {
         doc.budget.allocator().destroy(job);
@@ -179,7 +179,7 @@ export fn djvutang_thumbnail_start(document: ?*Document, page: u32, out: ?*?*Job
     const result = out orelse return .invalid_argument;
     result.* = null;
     const doc = document orelse return .invalid_argument;
-    doc.budget.denied = false;
+    doc.budget.denied = null;
     var value = (djvu.RenderJob.initThumbnail(&doc.value, page) catch |err| return doc.fail(err)) orelse return .ok;
     const job = doc.budget.allocator().create(Job) catch |err| {
         value.deinit();
@@ -193,7 +193,7 @@ export fn djvutang_thumbnail_start(document: ?*Document, page: u32, out: ?*?*Job
 export fn djvutang_render_step(handle: ?*Job, work: u32) Status {
     const job = handle orelse return .invalid_argument;
     if (job.failure) |status| return status;
-    job.owner.budget.denied = false;
+    job.owner.budget.denied = null;
     const result = job.value.step(work) catch |err| {
         const status = job.owner.fail(err);
         if (job.value.failure != null) job.failure = status;
@@ -206,7 +206,7 @@ export fn djvutang_render_restart(handle: ?*Job, options: ?*const Options) Statu
     const job = handle orelse return .invalid_argument;
     if (job.failure) |status| return status;
     const opts = Options.decode(options) catch |err| return job.owner.fail(err);
-    job.owner.budget.denied = false;
+    job.owner.budget.denied = null;
     job.value.restart(opts) catch |err| return job.owner.fail(err);
     return .ok;
 }
@@ -236,7 +236,7 @@ export fn djvutang_next_missing(document: ?*Document, page: u32, scope: u32, out
     const doc = document orelse return .invalid_argument;
     const result = out orelse return .invalid_argument;
     if (scope > 2) return .invalid_argument;
-    doc.budget.denied = false;
+    doc.budget.denied = null;
     const missing = doc.value.nextMissing(page, @enumFromInt(scope)) catch |err| return doc.fail(err);
     result.* = .{ .index = std.math.maxInt(u32), .id = null, .id_size = 0, .name = null, .name_size = 0 };
     if (missing) |index| {
@@ -251,7 +251,7 @@ export fn djvutang_provide_component(document: ?*Document, index: u32, data: ?[*
     const bytes = data orelse return .invalid_argument;
     if (index >= doc.value.components.items.len or doc.value.components.items[index].form != null) return .invalid_argument;
     if (size > doc.value.limits.max_input_bytes - doc.value.bytes.len - doc.value.suppliedBytes()) return .limit_exceeded;
-    doc.budget.denied = false;
+    doc.budget.denied = null;
     const owned = doc.budget.allocator().dupe(u8, bytes[0..size]) catch |err| return doc.fail(err);
     doc.value.provideComponent(index, owned) catch |err| {
         doc.budget.allocator().free(owned);
@@ -264,7 +264,7 @@ export fn djvutang_text(document: ?*Document, page: u32, out: ?*Buffer) Status {
     const result = out orelse return .invalid_argument;
     result.* = .{};
     const doc = document orelse return .invalid_argument;
-    doc.budget.denied = false;
+    doc.budget.denied = null;
     var value = (doc.value.text(page) catch |err| return doc.fail(err)) orelse return .ok;
     defer value.deinit(doc.budget.allocator());
     result.* = Buffer.owned(value.toUtf8(allocator) catch |err| return doc.fail(err));
@@ -275,7 +275,7 @@ export fn djvutang_annotations_json(document: ?*Document, page: u32, out: ?*Buff
     const result = out orelse return .invalid_argument;
     result.* = .{};
     const doc = document orelse return .invalid_argument;
-    doc.budget.denied = false;
+    doc.budget.denied = null;
     var value = (doc.value.annotations(page) catch |err| return doc.fail(err)) orelse return .ok;
     defer value.deinit();
     result.* = Buffer.owned(std.json.Stringify.valueAlloc(allocator, &value, .{}) catch |err| return doc.fail(err));
@@ -286,7 +286,7 @@ export fn djvutang_outline_json(document: ?*Document, out: ?*Buffer) Status {
     const result = out orelse return .invalid_argument;
     result.* = .{};
     const doc = document orelse return .invalid_argument;
-    doc.budget.denied = false;
+    doc.budget.denied = null;
     var value = (doc.value.outline() catch |err| return doc.fail(err)) orelse return .ok;
     defer value.deinit(doc.budget.allocator());
     result.* = Buffer.owned(std.json.Stringify.valueAlloc(allocator, &value, .{}) catch |err| return doc.fail(err));

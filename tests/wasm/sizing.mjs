@@ -94,6 +94,9 @@ for (const name of ['plain', 'shared', 'rotated-color', 'palette', 'foreground',
     for (let i = 0; i < 4; i++) assert.deepEqual(corner.rgba.subarray(i * 4, i * 4 + 4), expectedCorner);
     extremeTiles++;
   }
+  assert.equal(core.render_restart_sized(0xffffffff, 0xffffffff, 0, 0, 0, 0, 0), 4);
+  assert.equal(new TextDecoder().decode(new Uint8Array(core.memory.buffer, core.error_message_ptr(), core.error_message_len())),
+    'LimitExceeded in render_restart: format or complexity limit');
   assert.equal(core.render_restart_sized(0, 30, 0, 0, 0, 0, 0), 7);
   assert.equal(core.render_restart_sized(30, 30, 0, 0, 0, 0, 1), 7);
   assert.equal(core.render_restart_sized(1, 1, 0, 0, 0, 0, 0), 0);

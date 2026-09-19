@@ -24,12 +24,19 @@ const yieldTask = () => new Promise(resolve => {
 });
 const reply = (id, result) => postMessage({ id, result });
 const fail = (id, error) => postMessage({ id, error: {
-  code: errorCodes.has(error?.message) ? error.message : 'WorkerFailed',
+  code: errorCodes.has(error?.code ?? error?.message) ? (error.code ?? error.message) : 'WorkerFailed',
   message: error?.message ?? String(error),
 } });
 
 function check(status) {
-  if (status !== 0) throw new Error(errors[status] ?? `Decoder error ${status}`);
+  if (status === 0) return;
+  const code = errors[status] ?? 'WorkerFailed';
+  // Copy while the failed call is current: cleanup or another request can
+  // overwrite the core diagnostic before this error reaches the host.
+  const message = new TextDecoder().decode(new Uint8Array(
+    core.memory.buffer, core.error_message_ptr(), core.error_message_len(),
+  ));
+  throw Object.assign(new Error(message || code), { code });
 }
 
 function releaseJob() {
